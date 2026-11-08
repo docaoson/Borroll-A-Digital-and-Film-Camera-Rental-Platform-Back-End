@@ -8,3 +8,108 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum Role {
+  RENTER
+  HOST
+  ADMIN
+}
+
+enum KycSubmissionStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  phone        String?
+  passwordHash String     @map("password_hash")
+  fullName     String     @map("full_name")
+  avatarPath   String?    @map("avatar_path")
+  status       UserStatus @default(ACTIVE)
+  kycStatus    KycStatus  @default(NONE) @map("kyc_status")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  roles          UserRole[]
+  refreshTokens  RefreshToken[]
+  kycSubmissions KycSubmission[]
+
+  @@map("users")
+}
+
+model UserRole {
+  userId    String   @map("user_id")
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  familyId  String    @map("family_id")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model KycSubmission {
+  id           String              @id @default(cuid())
+  userId       String              @map("user_id")
+  idFrontPath  String              @map("id_front_path")
+  idBackPath   String              @map("id_back_path")
+  selfiePath   String              @map("selfie_path")
+  status       KycSubmissionStatus @default(PENDING)
+  rejectReason String?             @map("reject_reason")
+  reviewedBy   String?             @map("reviewed_by")
+  reviewedAt   DateTime?           @map("reviewed_at")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("kyc_submissions")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  @@index([targetType, targetId])
+  @@index([actorId])
+  @@map("audit_logs")
+}

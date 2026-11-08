@@ -1,17 +1,25 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
 import { validate } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './infra/database/database.module';
+import { IdentityModule } from './modules/identity/identity.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       validate,
+    }),
+    JwtModule.register({
+      global: true,
     }),
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
@@ -23,6 +31,21 @@ import { DatabaseModule } from './infra/database/database.module';
     ]),
     DatabaseModule,
     HealthModule,
+    IdentityModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
 })
 export class AppModule {}
