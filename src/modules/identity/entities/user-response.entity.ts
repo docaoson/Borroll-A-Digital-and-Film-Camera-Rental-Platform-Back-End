@@ -40,8 +40,15 @@ export class MeResponse {
 
   @ApiProperty({ example: ['RENTER'], type: [String] })
   roles!: string[];
-
-  @ApiProperty({ example: 'NONE' })
-  kycStatus!: string;
 }
 
+export class AvatarPresignResponse {
+  @ApiProperty({ example: 'https://...' })
+  uploadUrl!: string;
+
+  @ApiProperty({ example: 'avatars/u1/abc.jpg' })
+  path!: string;
+
+  @ApiProperty({ example: 'eyJhbGciOi...' })
+  token!: string;
+}

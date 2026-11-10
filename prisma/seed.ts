@@ -1,4 +1,4 @@
-import { PrismaClient, Role, UserStatus, KycStatus } from '@prisma/client';
+import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
@@ -9,7 +9,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('Seeding initial identity data...');
+  console.log('Seeding initial store identity data...');
 
   const defaultPassword = 'Password123!';
   const passwordHash = await argon2.hash(defaultPassword);
@@ -20,35 +20,30 @@ async function main() {
       fullName: 'Quản trị viên Borroll',
       phone: '0901000001',
       roles: [Role.ADMIN],
-      kycStatus: KycStatus.VERIFIED,
     },
     {
-      email: 'host1@borroll.vn',
-      fullName: 'Chủ máy Nguyễn Văn Nam',
+      email: 'staff1@borroll.vn',
+      fullName: 'Nhân viên Tây Hồ',
       phone: '0902000002',
-      roles: [Role.HOST, Role.RENTER],
-      kycStatus: KycStatus.VERIFIED,
+      roles: [Role.STAFF],
     },
     {
-      email: 'host2@borroll.vn',
-      fullName: 'Chủ máy Lê Thị Hoa',
+      email: 'staff2@borroll.vn',
+      fullName: 'Nhân viên Thanh Xuân',
       phone: '0903000003',
-      roles: [Role.HOST, Role.RENTER],
-      kycStatus: KycStatus.NONE,
+      roles: [Role.STAFF],
     },
     {
       email: 'renter1@borroll.vn',
-      fullName: 'Người thuê Trần Tuấn Anh',
+      fullName: 'Khách hàng Trần Tuấn Anh',
       phone: '0904000004',
       roles: [Role.RENTER],
-      kycStatus: KycStatus.NONE,
     },
     {
       email: 'renter2@borroll.vn',
-      fullName: 'Người thuê Phạm Minh Đức',
+      fullName: 'Khách hàng Phạm Minh Đức',
       phone: '0905000005',
       roles: [Role.RENTER],
-      kycStatus: KycStatus.NONE,
     },
   ];
 
@@ -58,7 +53,6 @@ async function main() {
       update: {
         fullName: item.fullName,
         phone: item.phone,
-        kycStatus: item.kycStatus,
       },
       create: {
         email: item.email,
@@ -66,7 +60,6 @@ async function main() {
         phone: item.phone,
         passwordHash,
         status: UserStatus.ACTIVE,
-        kycStatus: item.kycStatus,
       },
     });
 
@@ -87,7 +80,7 @@ async function main() {
     }
   }
 
-  console.log('Seeding identity data completed successfully.');
+  console.log('Seeding store identity data completed successfully.');
 }
 
 main()
@@ -98,4 +91,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

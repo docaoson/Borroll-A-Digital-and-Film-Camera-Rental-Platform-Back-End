@@ -9,8 +9,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Role } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
 import cookieParser from 'cookie-parser';
+import type { Server } from 'http';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { Roles } from '../../src/common/decorators/roles.decorator';
@@ -19,24 +20,67 @@ import { PrismaService } from '../../src/infra/database/prisma.service';
 
 jest.setTimeout(30000);
 
+interface ErrorBody {
+  error: {
+    code: string;
+    message: string;
+    details: Record<string, unknown>;
+  };
+}
+
+interface AuthBody {
+  accessToken: string;
+  user: {
+    id: string;
+    fullName: string;
+    email: string;
+    roles: string[];
+  };
+}
+
+interface MeBody {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  roles: string[];
+}
+
 @Controller('test-role')
 class TestRoleController {
-  @Roles(Role.HOST)
-  @Get('host-only')
-  hostOnly() {
+  @Roles(Role.STAFF)
+  @Get('staff-only')
+  staffOnly() {
+    return { ok: true };
+  }
+
+  @Roles(Role.ADMIN)
+  @Get('admin-only')
+  adminOnly() {
     return { ok: true };
   }
 }
 
 describe('Identity Module (e2e)', () => {
   let app: INestApplication;
+  let httpServer: Server;
   let prisma: PrismaService;
   let jwtService: JwtService;
   let configService: ConfigService;
 
-  const testUser1Email = `test+${Date.now()}_1@example.test`;
-  const testUser2Email = `test+${Date.now()}_2@example.test`;
+  const ts = Date.now();
+  const testUser1Email = `test+${ts}_1@example.test`;
+  const testUser2Email = `test+${ts}_2@example.test`;
+  const testSuspendedEmail = `test+${ts}_suspended@example.test`;
   const password = 'Password123!';
+
+  const extractSetCookies = (res: request.Response): string[] => {
+    const raw = res.headers['set-cookie'];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') return [raw];
+    return [];
+  };
 
   beforeAll(async () => {
     jest.setTimeout(30000);
@@ -83,10 +127,10 @@ describe('Identity Module (e2e)', () => {
     app.useGlobalFilters(new HttpExceptionFilter());
 
     await app.init();
+    httpServer = app.getHttpServer() as Server;
   });
 
   afterAll(async () => {
-    // Clean up all test users created by this test suite
     await prisma.user.deleteMany({
       where: {
         email: {
@@ -100,8 +144,8 @@ describe('Identity Module (e2e)', () => {
   });
 
   describe('Registration & Duplicate Email', () => {
-    it('should register successfully with role RENTER', async () => {
-      const res = await request(app.getHttpServer())
+    it('should register successfully with role RENTER and httpOnly refresh cookie', async () => {
+      const res = await request(httpServer)
         .post('/api/v1/auth/register')
         .send({
           fullName: 'Test User One',
@@ -111,21 +155,24 @@ describe('Identity Module (e2e)', () => {
         })
         .expect(201);
 
-      expect(res.body).toHaveProperty('accessToken');
-      expect(res.body.user).toMatchObject({
+      const body = res.body as AuthBody;
+      expect(body).toHaveProperty('accessToken');
+      expect(body.user).toMatchObject({
         email: testUser1Email,
         fullName: 'Test User One',
         roles: ['RENTER'],
       });
 
-      // Verify Set-Cookie header contains refreshToken
-      const cookies = res.headers['set-cookie'];
-      expect(cookies).toBeDefined();
+      const cookies = extractSetCookies(res);
+      expect(cookies.length).toBeGreaterThan(0);
       expect(cookies[0]).toContain('refreshToken=');
+      expect(cookies[0]).toContain('HttpOnly');
+      expect(cookies[0]).toContain('Path=/api/v1/auth');
+      expect(cookies[0]).toContain('SameSite=Lax');
     });
 
     it('should return 409 EMAIL_ALREADY_USED when registering with existing email', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await request(httpServer)
         .post('/api/v1/auth/register')
         .send({
           fullName: 'Duplicate User',
@@ -135,15 +182,14 @@ describe('Identity Module (e2e)', () => {
         })
         .expect(409);
 
-      expect(res.body.error).toMatchObject({
-        code: 'EMAIL_ALREADY_USED',
-      });
+      const body = res.body as ErrorBody;
+      expect(body.error.code).toBe('EMAIL_ALREADY_USED');
     });
   });
 
-  describe('Login & Wrong Password', () => {
+  describe('Login, Wrong Password & Suspended Account', () => {
     it('should return 401 INVALID_CREDENTIALS when password is incorrect', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await request(httpServer)
         .post('/api/v1/auth/login')
         .send({
           email: testUser1Email,
@@ -151,13 +197,12 @@ describe('Identity Module (e2e)', () => {
         })
         .expect(401);
 
-      expect(res.body.error).toMatchObject({
-        code: 'INVALID_CREDENTIALS',
-      });
+      const body = res.body as ErrorBody;
+      expect(body.error.code).toBe('INVALID_CREDENTIALS');
     });
 
     it('should return 401 INVALID_CREDENTIALS when email does not exist', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await request(httpServer)
         .post('/api/v1/auth/login')
         .send({
           email: 'nonexistent@example.test',
@@ -165,13 +210,53 @@ describe('Identity Module (e2e)', () => {
         })
         .expect(401);
 
-      expect(res.body.error).toMatchObject({
-        code: 'INVALID_CREDENTIALS',
+      const body = res.body as ErrorBody;
+      expect(body.error.code).toBe('INVALID_CREDENTIALS');
+    });
+
+    it('should check suspension only after password matches', async () => {
+      await request(httpServer)
+        .post('/api/v1/auth/register')
+        .send({
+          fullName: 'Suspended User',
+          email: testSuspendedEmail,
+          phone: '0911112222',
+          password,
+        })
+        .expect(201);
+
+      await prisma.user.update({
+        where: { email: testSuspendedEmail },
+        data: { status: UserStatus.SUSPENDED },
       });
+
+      // Wrong password on suspended account -> 401 INVALID_CREDENTIALS
+      const wrongPassRes = await request(httpServer)
+        .post('/api/v1/auth/login')
+        .send({
+          email: testSuspendedEmail,
+          password: 'WrongPassword!',
+        })
+        .expect(401);
+      expect((wrongPassRes.body as ErrorBody).error.code).toBe(
+        'INVALID_CREDENTIALS',
+      );
+
+      // Correct password on suspended account -> 403 ACCOUNT_SUSPENDED
+      const rightPassRes = await request(httpServer)
+        .post('/api/v1/auth/login')
+        .send({
+          email: testSuspendedEmail,
+          password,
+        })
+        .expect(403);
+      expect((rightPassRes.body as ErrorBody).error.code).toBe(
+        'ACCOUNT_SUSPENDED',
+      );
     });
 
     it('should login successfully with valid credentials', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await request(httpServer)
         .post('/api/v1/auth/login')
         .send({
           email: testUser1Email,
@@ -179,96 +264,143 @@ describe('Identity Module (e2e)', () => {
         })
         .expect(200);
 
-      expect(res.body).toHaveProperty('accessToken');
-      expect(res.body.user.email).toBe(testUser1Email);
+      const body = res.body as AuthBody;
+      expect(body).toHaveProperty('accessToken');
+      expect(body.user.email).toBe(testUser1Email);
     });
   });
 
-  describe('Token Expiration & Access Control', () => {
+  describe('Token Expiration & Store RBAC (RENTER, STAFF, ADMIN)', () => {
     it('should return 401 TOKEN_EXPIRED when access token is expired', async () => {
       const secret = configService.get<string>('JWT_ACCESS_SECRET');
       const expiredToken = await jwtService.signAsync(
-        { sub: 'random-user-id', roles: ['RENTER'] },
+        { sub: 'random-user-id', roles: ['RENTER'], email: 'a@example.test' },
         { secret, expiresIn: '-1s' },
       );
 
-      const res = await request(app.getHttpServer())
+      const res = await request(httpServer)
         .get('/api/v1/me')
         .set('Authorization', `Bearer ${expiredToken}`)
         .expect(401);
 
-      expect(res.body.error).toMatchObject({
-        code: 'TOKEN_EXPIRED',
-      });
+      const body = res.body as ErrorBody;
+      expect(body.error.code).toBe('TOKEN_EXPIRED');
     });
 
-    it('should return 403 HOST_NOT_ENABLED when RENTER accesses HOST-only endpoint', async () => {
-      const loginRes = await request(app.getHttpServer())
-        .post('/api/v1/auth/login')
-        .send({
-          email: testUser1Email,
-          password,
-        });
+    it('should enforce STAFF and ADMIN role rules properly', async () => {
+      const secret = configService.get<string>('JWT_ACCESS_SECRET');
 
-      const accessToken = loginRes.body.accessToken;
+      const renterToken = await jwtService.signAsync(
+        { sub: 'u-renter', roles: [Role.RENTER], email: 'r@example.test' },
+        { secret, expiresIn: '5m' },
+      );
+      const staffToken = await jwtService.signAsync(
+        { sub: 'u-staff', roles: [Role.STAFF], email: 's@example.test' },
+        { secret, expiresIn: '5m' },
+      );
+      const adminToken = await jwtService.signAsync(
+        { sub: 'u-admin', roles: [Role.ADMIN], email: 'a@example.test' },
+        { secret, expiresIn: '5m' },
+      );
 
-      const res = await request(app.getHttpServer())
-        .get('/api/v1/test-role/host-only')
-        .set('Authorization', `Bearer ${accessToken}`)
+      // RENTER cannot access STAFF endpoint -> 403 FORBIDDEN
+      const renterRes = await request(httpServer)
+        .get('/api/v1/test-role/staff-only')
+        .set('Authorization', `Bearer ${renterToken}`)
         .expect(403);
+      expect((renterRes.body as ErrorBody).error.code).toBe('FORBIDDEN');
 
-      expect(res.body.error).toMatchObject({
-        code: 'HOST_NOT_ENABLED',
-      });
+      // STAFF can access STAFF endpoint -> 200
+      await request(httpServer)
+        .get('/api/v1/test-role/staff-only')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .expect(200);
+
+      // ADMIN includes STAFF permission -> 200 on STAFF endpoint
+      await request(httpServer)
+        .get('/api/v1/test-role/staff-only')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      // STAFF cannot access ADMIN-only endpoint -> 403 FORBIDDEN
+      const staffAdminRes = await request(httpServer)
+        .get('/api/v1/test-role/admin-only')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .expect(403);
+      expect((staffAdminRes.body as ErrorBody).error.code).toBe('FORBIDDEN');
     });
   });
 
-  describe('Refresh Token Rotation & Replay Detection', () => {
-    it('should rotate refresh token correctly and reject reuse of old token', async () => {
-      // 1. Login to obtain initial refreshToken
-      const loginRes = await request(app.getHttpServer())
+  describe('Refresh Token Rotation, Replay Detection & Concurrency', () => {
+    it('should rotate refresh token and revoke entire family on reuse', async () => {
+      const loginRes = await request(httpServer)
         .post('/api/v1/auth/login')
         .send({
           email: testUser1Email,
           password,
-        });
+        })
+        .expect(200);
 
-      const rawCookie1 = loginRes.headers['set-cookie'][0];
-      const cookieVal1 = rawCookie1.split(';')[0]; // "refreshToken=..."
+      const cookies1 = extractSetCookies(loginRes);
+      const cookieVal1 = cookies1[0].split(';')[0];
 
-      // 2. Perform refresh
-      const refreshRes1 = await request(app.getHttpServer())
+      const refreshRes1 = await request(httpServer)
         .post('/api/v1/auth/refresh')
         .set('Cookie', cookieVal1)
         .expect(200);
 
-      expect(refreshRes1.body).toHaveProperty('accessToken');
-      const rawCookie2 = refreshRes1.headers['set-cookie'][0];
-      const cookieVal2 = rawCookie2.split(';')[0];
+      expect(refreshRes1.body as { accessToken: string }).toHaveProperty(
+        'accessToken',
+      );
+      const cookies2 = extractSetCookies(refreshRes1);
+      const cookieVal2 = cookies2[0].split(';')[0];
       expect(cookieVal2).not.toEqual(cookieVal1);
 
-      // 3. Replay attack: try using the revoked cookieVal1 again
-      const replayRes = await request(app.getHttpServer())
+      // Replay attack using revoked cookieVal1
+      const replayRes = await request(httpServer)
         .post('/api/v1/auth/refresh')
         .set('Cookie', cookieVal1)
         .expect(401);
+      expect((replayRes.body as ErrorBody).error.code).toBe('UNAUTHENTICATED');
 
-      expect(replayRes.body.error.code).toBe('UNAUTHENTICATED');
-
-      // 4. Verify that cookieVal2 (part of the same family) is now also revoked!
-      const subsequentRes = await request(app.getHttpServer())
+      // Verify newest token cookieVal2 in the same family is also revoked
+      const subsequentRes = await request(httpServer)
         .post('/api/v1/auth/refresh')
         .set('Cookie', cookieVal2)
         .expect(401);
+      expect((subsequentRes.body as ErrorBody).error.code).toBe(
+        'UNAUTHENTICATED',
+      );
+    });
 
-      expect(subsequentRes.body.error.code).toBe('UNAUTHENTICATED');
+    it('should allow only one of two concurrent refresh requests with the same token', async () => {
+      const loginRes = await request(httpServer)
+        .post('/api/v1/auth/login')
+        .send({
+          email: testUser1Email,
+          password,
+        })
+        .expect(200);
+
+      const cookieVal = extractSetCookies(loginRes)[0].split(';')[0];
+
+      const [resA, resB] = await Promise.all([
+        request(httpServer)
+          .post('/api/v1/auth/refresh')
+          .set('Cookie', cookieVal),
+        request(httpServer)
+          .post('/api/v1/auth/refresh')
+          .set('Cookie', cookieVal),
+      ]);
+
+      const statuses = [resA.status, resB.status].sort((a, b) => a - b);
+      expect(statuses).toEqual([200, 401]);
     });
   });
 
-  describe('PATCH /me and Profile Isolation', () => {
-    it('should register second user and ensure PATCH /me only updates caller profile', async () => {
-      // Register user 2
-      const reg2 = await request(app.getHttpServer())
+  describe('GET /me, PATCH /me & Profile Isolation', () => {
+    it('should return profile without kycStatus and isolate PATCH /me updates', async () => {
+      const reg2 = await request(httpServer)
         .post('/api/v1/auth/register')
         .send({
           fullName: 'Test User Two',
@@ -278,10 +410,9 @@ describe('Identity Module (e2e)', () => {
         })
         .expect(201);
 
-      const token2 = reg2.body.accessToken;
+      const token2 = (reg2.body as AuthBody).accessToken;
 
-      // Update user 2
-      const patchRes = await request(app.getHttpServer())
+      const patchRes = await request(httpServer)
         .patch('/api/v1/me')
         .set('Authorization', `Bearer ${token2}`)
         .send({
@@ -290,27 +421,42 @@ describe('Identity Module (e2e)', () => {
         })
         .expect(200);
 
-      expect(patchRes.body).toMatchObject({
+      const me2 = patchRes.body as MeBody & Record<string, unknown>;
+      expect(me2).toMatchObject({
         fullName: 'User Two Updated',
         phone: '0911223344',
         email: testUser2Email,
       });
+      expect(me2.kycStatus).toBeUndefined();
+
+      // Foreign avatarPath should be rejected with 400 VALIDATION_ERROR
+      const badAvatarRes = await request(httpServer)
+        .patch('/api/v1/me')
+        .set('Authorization', `Bearer ${token2}`)
+        .send({
+          avatarPath: 'avatars/someone-else/avatar.jpg',
+        })
+        .expect(400);
+      expect((badAvatarRes.body as ErrorBody).error.code).toBe(
+        'VALIDATION_ERROR',
+      );
 
       // Verify User 1 was not modified
-      const login1 = await request(app.getHttpServer())
+      const login1 = await request(httpServer)
         .post('/api/v1/auth/login')
         .send({
           email: testUser1Email,
           password,
-        });
+        })
+        .expect(200);
 
-      const token1 = login1.body.accessToken;
-      const getMe1 = await request(app.getHttpServer())
+      const token1 = (login1.body as AuthBody).accessToken;
+      const getMe1 = await request(httpServer)
         .get('/api/v1/me')
         .set('Authorization', `Bearer ${token1}`)
         .expect(200);
 
-      expect(getMe1.body.fullName).toBe('Test User One');
+      expect((getMe1.body as MeBody).fullName).toBe('Test User One');
     });
   });
 });

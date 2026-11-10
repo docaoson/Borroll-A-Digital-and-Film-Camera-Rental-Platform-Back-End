@@ -1,11 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { StorageService } from './storage.service';
+import { createClient } from '@supabase/supabase-js';
+import { SignedUploadResult, StorageService } from './storage.service';
 
 @Injectable()
 export class SupabaseStorageService implements StorageService {
-  private readonly supabase: SupabaseClient;
+  private readonly supabase: ReturnType<typeof createClient>;
   private readonly logger = new Logger(SupabaseStorageService.name);
 
   constructor(private readonly configService: ConfigService) {
@@ -25,18 +30,27 @@ export class SupabaseStorageService implements StorageService {
   async createUploadUrl(
     bucket: string,
     path: string,
-    _contentType?: string,
-  ): Promise<string> {
+  ): Promise<SignedUploadResult> {
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUploadUrl(path);
 
     if (error || !data) {
-      this.logger.error(`Failed to create signed upload URL: ${error?.message}`);
-      throw new Error(`Storage upload URL creation failed: ${error?.message}`);
+      this.logger.error(
+        `Failed to create signed upload URL: ${error?.message}`,
+      );
+      throw new ServiceUnavailableException({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Không thể tạo liên kết tải ảnh lên lúc này.',
+        details: {},
+      });
     }
 
-    return data.signedUrl;
+    return {
+      uploadUrl: data.signedUrl,
+      path: data.path,
+      token: data.token,
+    };
   }
 
   getPublicUrl(bucket: string, path: string): string {
@@ -55,10 +69,52 @@ export class SupabaseStorageService implements StorageService {
 
     if (error || !data) {
       this.logger.error(`Failed to create signed read URL: ${error?.message}`);
-      throw new Error(`Storage signed URL creation failed: ${error?.message}`);
+      throw new ServiceUnavailableException({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Không thể tạo liên kết xem ảnh lúc này.',
+        details: {},
+      });
     }
 
     return data.signedUrl;
+  }
+
+  async assertOwnedFile(
+    bucket: string,
+    path: string,
+    expectedPrefix: string,
+  ): Promise<void> {
+    if (!path || path.includes('..') || !path.startsWith(expectedPrefix)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Đường dẫn tệp tin không hợp lệ.',
+        details: {},
+      });
+    }
+
+    const lastSlash = path.lastIndexOf('/');
+    const folder = lastSlash >= 0 ? path.slice(0, lastSlash) : '';
+    const fileName = lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
+
+    if (!fileName) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Đường dẫn tệp tin không hợp lệ.',
+        details: {},
+      });
+    }
+
+    const { data, error } = await this.supabase.storage
+      .from(bucket)
+      .list(folder, { search: fileName, limit: 20 });
+
+    if (error || !data || !data.some((item) => item.name === fileName)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Tệp tin chưa được tải lên hoặc không tồn tại.',
+        details: {},
+      });
+    }
   }
 
   async remove(bucket: string, path: string): Promise<void> {
@@ -70,4 +126,3 @@ export class SupabaseStorageService implements StorageService {
     }
   }
 }
-

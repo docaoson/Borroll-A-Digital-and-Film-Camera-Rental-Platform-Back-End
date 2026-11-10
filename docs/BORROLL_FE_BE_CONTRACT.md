@@ -1,7 +1,9 @@
-# BORROLL — THỎA THUẬN GIỮA FE VÀ BE
+# BORROLL — THỎA THUẬN GIỮA FE VÀ BE (BẢN CỬA HÀNG)
 
-Tài liệu do **BE** viết và giữ, dành cho **FE**. Gồm: (1) danh sách trang cần làm, (2) user stories, (3) hợp đồng API.
-Nguồn sự thật cuối cùng của API là `docs/openapi.yaml` ở repo backend; tài liệu này là bản đọc cho người.
+Do **BE** viết và giữ, dành cho **FE**. Gồm: (1) quy ước chung, (2) danh sách trang và API từng trang, (3) hợp đồng API.
+Bối cảnh và lý do thiết kế nằm ở `BORROLL_STORE_PLAN.md`. Khi tài liệu này khác với `docs/openapi.yaml` (BE xuất ra từ code) thì **`openapi.yaml` đúng**, hãy báo BE sửa tài liệu.
+
+Bản này thay thế hoàn toàn bản nền tảng cũ: **không còn chủ máy, không còn duyệt tin, không còn KYC, không còn giỏ hàng.**
 
 ---
 
@@ -10,44 +12,40 @@ Nguồn sự thật cuối cùng của API là `docs/openapi.yaml` ở repo back
 ### 1.1 Địa chỉ và xác thực
 
 - Base URL: `{API_URL}/api/v1` (FE đọc từ `NEXT_PUBLIC_API_URL`).
-- Đăng nhập thành công trả **access token** trong JSON (sống 15 phút). FE giữ trong bộ nhớ (không lưu localStorage) và gửi ở header `Authorization: Bearer <token>`.
+- Đăng nhập trả **access token** trong JSON (sống 15 phút). FE giữ trong bộ nhớ, **không** lưu localStorage, gửi ở header `Authorization: Bearer <token>`.
 - **Refresh token** nằm trong cookie `httpOnly`, FE không đọc được. Mọi request phải gửi `credentials: 'include'`.
-- Khi API trả `401` với `error.code = "TOKEN_EXPIRED"`: FE gọi `POST /auth/refresh` một lần, rồi gửi lại request cũ. Nếu refresh cũng `401` thì chuyển về `/login?next=<trang hiện tại>`.
-- Endpoint đánh dấu **public** không bắt buộc token. Riêng các endpoint công khai đọc máy (`GET /cameras`, `GET /cameras/:slug`, `GET /hosts/:id`) chấp nhận header `Authorization: Bearer <token>` tùy chọn: nếu có token thì tính trường `isFavorite` theo người dùng đang đăng nhập, không có thì mặc định `isFavorite: false`. Endpoint còn lại cần token; thiếu quyền trả `403`.
+- Khi API trả `401` với `error.code = "TOKEN_EXPIRED"`: gọi `POST /auth/refresh` **một lần** rồi gửi lại request cũ (dùng một promise chung để nhiều request không refresh cùng lúc). Refresh cũng `401` thì chuyển về `/login?next=<trang hiện tại>`.
+- Endpoint đánh dấu 🌐 là công khai. Riêng 🌐* **nhận token tùy chọn**: có token thì trả thêm dữ liệu cá nhân (ví dụ `isFavorite`), không có thì coi như khách vãng lai.
+- Vai trò: `RENTER` (hiển thị là **Khách**), `STAFF` (nhân viên), `ADMIN`. Mã vai trò `RENTER` giữ nguyên từ bản cũ. `HOST` không còn dùng.
+- **Quyền nằm trong access token.** Khi admin đổi vai trò của ai đó, người đó phải đăng nhập lại hoặc chờ token hết hạn (tối đa 15 phút) mới có quyền mới.
 
 ### 1.2 Định dạng dữ liệu
 
 | Loại | Quy ước | Ví dụ |
 |---|---|---|
 | Tiền | Số nguyên VND, không thập phân | `350000` |
-| Ngày thuê | Chuỗi `YYYY-MM-DD` (không giờ) | `"2026-12-03"` |
+| Ngày thuê | Chuỗi `YYYY-MM-DD` | `"2026-12-03"` |
 | Thời điểm | ISO 8601 UTC | `"2026-11-07T08:30:00Z"` |
-| ID | Chuỗi | `"b3f1..."` |
-| Phân trang | Query `page` (từ 1), `pageSize` (mặc định 32, tối đa 100) | |
-| Danh sách | `{ "items": [...], "page": 1, "pageSize": 32, "total": 199 }` | |
+| ID | Chuỗi | `"clx9..."` |
+| Phân trang | Query `page` (từ 1), `pageSize` (mặc định 20, tối đa 100) | |
+| Danh sách | `{ "items": [...], "page": 1, "pageSize": 20, "total": 120 }` | |
 
-FE tự định dạng hiển thị (`350.000 đ`, `03/12/2026`), BE không trả chuỗi đã định dạng.
+FE tự định dạng hiển thị (`350.000 đ`, `03/12/2026`). "Hôm nay" luôn tính theo múi giờ **Asia/Ho_Chi_Minh**.
 
 ### 1.3 Quy tắc tính ngày thuê
 
-- Người thuê chọn **ngày nhận** (`startDate`) và **ngày trả** (`endDate`).
-- **Số ngày = `endDate` − `startDate`**, tối thiểu 1. Ví dụ nhận 12/12, trả 14/12 là 2 ngày.
-- Ngày trả máy **không** bị tính là kín: người khác có thể nhận máy đúng ngày đó.
-- Do đó `unavailableDates` (xem 4.3) chỉ chứa các đêm máy đang bị giữ, tức từ `startDate` đến ngày trước `endDate`.
+- Khách chọn **ngày nhận** (`startDate`) và **ngày trả** (`endDate`).
+- **Số ngày = `endDate` − `startDate`**, tối thiểu 1. Nhận 12/12, trả 14/12 là 2 ngày.
+- Ngày trả máy **không** bị tính là kín: người khác có thể nhận đúng ngày đó.
+- Nhận và trả máy **tại cùng một chi nhánh** (chi nhánh khách chọn khi đặt). Không giao hàng tận nơi.
 
-### 1.4 Định dạng lỗi (mọi endpoint)
+### 1.4 Định dạng lỗi
 
 ```json
-{
-  "error": {
-    "code": "BOOKING_DATE_UNAVAILABLE",
-    "message": "Máy đã có người đặt trong khoảng ngày này.",
-    "details": {}
-  }
-}
+{ "error": { "code": "NO_UNIT_AVAILABLE", "message": "Hết máy trong khoảng ngày này.", "details": {} } }
 ```
 
-Với lỗi form (`400 VALIDATION_ERROR`), `details` là `{ "fields": { "email": "Email không hợp lệ", "password": "Tối thiểu 8 ký tự" } }`. FE hiển thị lỗi dưới từng ô theo `fields`. `message` là tiếng Việt, có thể hiển thị thẳng cho người dùng.
+Lỗi form (`400 VALIDATION_ERROR`): `details = { "fields": { "phone": "Số điện thoại không hợp lệ" } }`. FE hiển thị lỗi dưới từng ô. `message` là tiếng Việt, có thể hiển thị thẳng.
 
 | HTTP | `code` | Khi nào |
 |---|---|---|
@@ -56,508 +54,369 @@ Với lỗi form (`400 VALIDATION_ERROR`), `details` là `{ "fields": { "email":
 | 401 | `TOKEN_EXPIRED` | Access token hết hạn |
 | 401 | `INVALID_CREDENTIALS` | Sai email hoặc mật khẩu |
 | 403 | `FORBIDDEN` | Không đủ quyền |
-| 403 | `HOST_NOT_ENABLED` | Chưa bật vai trò chủ máy |
-| 404 | `NOT_FOUND` | Không tồn tại hoặc không có quyền xem |
+| 403 | `ACCOUNT_SUSPENDED` | Tài khoản bị khóa |
+| 404 | `NOT_FOUND` | Không tồn tại, hoặc không có quyền xem |
 | 409 | `EMAIL_ALREADY_USED` | Đăng ký trùng email |
-| 409 | `BOOKING_DATE_UNAVAILABLE` | Ngày đã bị đặt hoặc bị chặn |
+| 409 | `NO_UNIT_AVAILABLE` | Hết máy trong khoảng ngày ở chi nhánh đã chọn |
+| 409 | `BOOKING_DATE_UNAVAILABLE` | Khóa bảo trì trùng với đơn đang hoạt động |
 | 409 | `INVALID_STATUS_TRANSITION` | Hành động không hợp lệ với trạng thái hiện tại |
-| 422 | `CANNOT_BOOK_OWN_CAMERA` | Chủ máy tự đặt máy của mình |
-| 422 | `CAMERA_NOT_BOOKABLE` | Máy không ở trạng thái `ACTIVE` |
-| 429 | `RATE_LIMITED` | Gọi quá nhiều (đặc biệt `/auth/*`) |
+| 422 | `MODEL_NOT_BOOKABLE` | Mẫu máy đang ẩn hoặc ngừng cho thuê |
+| 422 | `INCOMPATIBLE_ITEMS` | Ống kính không cùng ngàm với thân máy trong đơn |
+| 422 | `PAYMENT_INCOMPLETE` | Số tiền thu lúc giao máy chưa đủ |
+| 429 | `RATE_LIMITED` | Gọi quá nhiều (auth, AI) |
+| 503 | `AI_UNAVAILABLE` | Trợ lý AI tạm thời không dùng được |
 
-### 1.5 Các giá trị liệt kê (enum) và nhãn hiển thị
+### 1.5 Giá trị liệt kê và nhãn hiển thị
 
-**Trạng thái đơn thuê (`booking.status`)**
+**Trạng thái đơn (`booking.status`)**
 
-| Giá trị | Nhãn tiếng Việt | Màu badge |
+| Giá trị | Nhãn | Màu badge |
 |---|---|---|
-| `PENDING` | Chờ chủ máy duyệt | warning |
-| `OWNER_APPROVED` | Chủ máy đã duyệt | success |
+| `PENDING` | Chờ shop xác nhận | warning |
+| `CONFIRMED` | Shop đã xác nhận, chờ nhận máy | info |
+| `PICKED_UP` | Đang thuê | success |
+| `RETURNED` | Đã trả máy, chờ hoàn cọc | info |
+| `COMPLETED` | Hoàn tất | neutral |
 | `REJECTED` | Bị từ chối | danger |
 | `CANCELLED` | Đã hủy | danger |
 
-(Các trạng thái `PAID`, `HANDED_OVER`, `RETURNED`, `COMPLETED`, `DISPUTED` sẽ thêm khi có thanh toán; FE nên xử lý giá trị lạ bằng nhãn mặc định, không để vỡ giao diện.)
+Đơn `PICKED_UP` có `isOverdue = true` hiển thị thêm nhãn **Quá hạn**. FE phải có nhãn mặc định cho giá trị lạ.
 
-**Trạng thái tin đăng (`camera.status`)**: `DRAFT` (Nháp), `PENDING_REVIEW` (Chờ duyệt), `ACTIVE` (Đang hiển thị), `PAUSED` (Tạm ẩn), `REJECTED` (Bị từ chối).
-
-**Loại máy (`cameraType`)**: `DIGITAL`, `FILM`. **Vai trò (`roles`)**: `RENTER`, `HOST`, `ADMIN`. **KYC (`kycStatus`)**: `NONE`, `PENDING`, `VERIFIED`, `REJECTED`.
+**Khác:** `kind` mẫu máy: `CAMERA`, `LENS`, `ACCESSORY`. `cameraType`: `DIGITAL`, `FILM`, `INSTANT`. Tình trạng chiếc máy (`condition`): `EXCELLENT` (Rất tốt), `GOOD` (Tốt), `FAIR` (Khá). Trạng thái chiếc máy (`status`): `AVAILABLE`, `MAINTENANCE`, `RETIRED`. Loại giao dịch (`payment.type`): `DEPOSIT_RECEIVED` (Thu cọc), `RENTAL_RECEIVED` (Thu tiền thuê), `DEPOSIT_REFUNDED` (Hoàn cọc), `DAMAGE_CHARGE` (Trừ tiền đền hỏng), `LATE_FEE` (Phí trả muộn). Hình thức (`method`): `CASH`, `BANK_TRANSFER`.
 
 ### 1.6 Quy tắc "nút hiển thị theo vai trò"
 
-Mọi response chi tiết đơn có `viewerRole` và `allowedActions` (xem 4.5). **FE chỉ cần hiển thị nút theo `allowedActions`**, không tự suy luận từ vai trò và trạng thái. BE vẫn kiểm tra quyền lần nữa ở mỗi endpoint.
+Chi tiết đơn có `viewerRole` (`CUSTOMER|STAFF|ADMIN`) và `allowedActions`. **FE chỉ hiển thị nút theo `allowedActions`**, không tự suy luận. Các giá trị: `cancel`, `confirm`, `reject`, `pickup`, `return`, `complete`. BE vẫn kiểm tra quyền ở mỗi endpoint.
 
 ---
 
-## 2. DANH SÁCH TRANG CẦN LÀM
+## 2. DANH SÁCH TRANG VÀ API TỪNG TRANG
 
-Ưu tiên: **P1** = làm đầu tiên (luồng người thuê xem máy), **P2** = luồng đặt thuê và chủ máy, **P3** = admin và hoàn thiện, **Sau** = chưa có API.
+Ưu tiên: **P1** làm đầu, **P2** vận hành shop, **P3** tính năng thêm.
 
-### 2.1 Khu vực công khai
+### 2.1 Công khai
 
-| Trang | Route | Quyền | API dùng | Ưu tiên |
+| Trang | Route | API | Ưu tiên |
+|---|---|---|---|
+| Trang chủ | `/` | `GET /models?featured=true`, `GET /categories`, `GET /branches` | P1 |
+| Cho thuê máy | `/rent` | `GET /models`, `GET /categories`, `GET /brands`, `GET /branches` | P1 |
+| Chi tiết máy | `/rent/[slug]` | `GET /models/:slug`, `GET /models/:id/availability`, `POST /bookings/quote`, `POST/DELETE /favorites/:modelId`, `POST /ai/camera-setup` (P3) | P1 |
+| Đăng nhập | `/login` | `POST /auth/login` | P1 |
+| Đăng ký | `/register` | `POST /auth/register` | P1 |
+| Trang lỗi | `/403`, 404, lỗi chung | — | P1 |
+| Giới thiệu và cửa hàng | `/about` | `GET /branches` | P1 |
+| Chính sách thuê, cọc, hư hỏng | `/policy` | tĩnh | P1 |
+| Hướng dẫn thuê cho người mới | `/guide` | tĩnh | P2 |
+| Liên hệ | `/contact` | `GET /branches` | P1 |
+
+### 2.2 Khách (cần đăng nhập)
+
+| Trang | Route | API | Ưu tiên |
+|---|---|---|---|
+| Xác nhận đặt thuê | `/checkout` | `POST /bookings/quote`, `GET /film-products`, `POST /bookings` | P1 |
+| Đơn của tôi | `/bookings` | `GET /bookings` | P1 |
+| Chi tiết đơn | `/bookings/[id]` | `GET /bookings/:id`, `POST /bookings/:id/cancel`, `GET /ai/camera-setup/:planId` | P1 |
+| Hồ sơ cá nhân | `/settings` | `GET/PATCH /me`, `POST /me/avatar/presign` | P1 |
+| Yêu thích | `/favorites` | `GET /favorites`, `DELETE /favorites/:modelId` | P3 |
+
+### 2.3 Nhân viên và admin (`/admin/*`; STAFF và ADMIN vào được, trang quản lý kho và người dùng chỉ ADMIN)
+
+| Trang | Route | API | Quyền | Ưu tiên |
 |---|---|---|---|---|
-| Trang chủ | `/` | public | `GET /cameras?badge=HOT` (máy nổi bật), `GET /categories` | P1 |
-| Cho thuê máy (danh sách + lọc) | `/rent` | public | `GET /cameras`, `GET /categories`, `GET /brands` | P1 |
-| Chi tiết máy | `/camera/[slug]` | public | `GET /cameras/:slug`, `GET /cameras/:id/availability`, `POST /bookings/quote`, `POST/DELETE /favorites/:id`, `GET /cameras?category=&excludeId=` (máy tương tự) | P1 |
-| Đăng nhập | `/login` | khách | `POST /auth/login` | P1 |
-| Đăng ký | `/register` | khách | `POST /auth/register` | P1 |
-| Hồ sơ chủ máy (công khai) | `/host-profile/[id]` | public | `GET /hosts/:id` | P3 |
-| 403 / 404 / lỗi chung | `/403`, `not-found` | — | — | P1 |
+| Tổng quan | `/admin` | `GET /staff/dashboard` | STAFF, ADMIN | P2 |
+| Danh sách đơn | `/admin/bookings` | `GET /staff/bookings` | STAFF, ADMIN | P2 |
+| Chi tiết đơn (xác nhận, giao, nhận, hoàn tất) | `/admin/bookings/[id]` | `GET /bookings/:id`, `POST /staff/bookings/:id/{confirm,reject,pickup,return,complete,cancel}`, `POST /staff/handover-photos/presign` | STAFF, ADMIN | P2 |
+| Lịch kho | `/admin/calendar` | `GET /staff/units`, `GET/POST/DELETE /staff/unit-blocks` | STAFF, ADMIN | P2 |
+| Mẫu máy | `/admin/models`, `/admin/models/[id]` | `/admin/models` CRUD, `PUT /admin/models/:id/specs`, ảnh | ADMIN | P2 |
+| Từng chiếc máy | `/admin/units` | `/admin/units` CRUD | ADMIN | P2 |
+| Danh mục, hãng, chi nhánh, film | `/admin/catalog` | `/admin/categories`, `/admin/brands`, `/admin/branches`, `/admin/film-products` | ADMIN | P2 |
+| Người dùng | `/admin/users` | `GET /admin/users`, `PATCH /admin/users/:id` | ADMIN | P2 |
 
-### 2.2 Người thuê (cần đăng nhập)
+### 2.4 Những chỗ không có API
 
-| Trang | Route | API dùng | Ưu tiên |
-|---|---|---|---|
-| Xác nhận đặt thuê | `/checkout?camera=<slug>&from=&to=` | `POST /bookings/quote`, `POST /bookings` | P2 |
-| Đơn của tôi | `/bookings` | `GET /bookings` | P2 |
-| Chi tiết đơn | `/bookings/[id]` | `GET /bookings/:id`, `POST /bookings/:id/cancel` | P2 |
-| Yêu thích | `/favorites` | `GET /favorites`, `DELETE /favorites/:cameraId` | P3 |
-| Hồ sơ cá nhân | `/settings` | `GET/PATCH /me`, `POST /me/avatar/presign` | P2 |
-| Xác minh danh tính (KYC) | `/settings/kyc` | `GET /me/kyc`, `POST /me/kyc/presign`, `POST /me/kyc` | P3 |
-| Tin nhắn | `/messages` | chưa có | Sau |
-
-### 2.3 Chủ máy (`/host/*`, cần role `HOST`)
-
-| Trang | Route | API dùng | Ưu tiên |
-|---|---|---|---|
-| Bật chế độ chủ máy (onboarding) | `/host/onboarding` | `POST /me/become-host` | P2 |
-| Tổng quan | `/host` | (trang khung, có thể lấy số liệu từ `/host/bookings`) | P2 |
-| Tin đăng của tôi | `/host/listings` | `GET /host/cameras`, `POST /host/cameras/:id/pause`, `/resume`, `DELETE /host/cameras/:id` (chỉ tin nháp) | P2 |
-| Tạo tin đăng (form nhiều bước) | `/host/listings/new` | `POST /host/cameras`, `POST /host/cameras/:id/images/presign`, `POST /host/cameras/:id/images`, `POST /host/cameras/:id/submit` | P2 |
-| Sửa tin đăng | `/host/listings/[id]/edit` | `GET /host/cameras/:id`, `PATCH /host/cameras/:id`, quản lý ảnh | P2 |
-| Lịch | `/host/calendar` | `GET /cameras/:id/availability`, `GET /host/blocked-dates`, `POST /host/blocked-dates`, `DELETE /host/blocked-dates/:id` | P2 |
-| Đơn nhận | `/host/orders` | `GET /host/bookings` | P2 |
-| Chi tiết đơn nhận | `/host/orders/[id]` | `GET /bookings/:id`, `POST /host/bookings/:id/approve`, `/reject` | P2 |
-| Ví / rút tiền | `/host/wallet` | chưa có | Sau |
-
-### 2.4 Admin (`/admin/*`, cần role `ADMIN`)
-
-| Trang | Route | API dùng | Ưu tiên |
-|---|---|---|---|
-| Duyệt tin đăng | `/admin/listings-review` | `GET /admin/cameras`, `POST /admin/cameras/:id/approve`, `/reject`, `PATCH /admin/cameras/:id/promotion` (gắn nhãn Hot) | P3 |
-| Duyệt KYC | `/admin/kyc` | `GET /admin/kyc-submissions`, `POST /admin/kyc-submissions/:id/approve`, `/reject` | P3 |
-| Tranh chấp, đối soát, người dùng | `/admin/disputes`, `/admin/users` | chưa có | Sau |
-
-### 2.5 Những chỗ KHÔNG có API (FE xử lý riêng)
-
-- **Đánh giá** (khối ở trang chủ, tab ở chi tiết máy): chưa có module đánh giá. Dùng dữ liệu mẫu cố định hoặc ẩn khối này.
-- **Giỏ hàng** ở header: hệ thống đặt thuê **từng máy một**, không có giỏ hàng. Bỏ nút giỏ hàng hoặc đổi thành lối tắt tới "Đơn của tôi".
-- **Số lượt cho thuê** của chủ máy (`completedRentals`): luôn là `0` cho đến khi có thanh toán và trạng thái `COMPLETED`. FE nên ẩn số khi bằng 0.
-- **Giảm giá:** chưa hỗ trợ. Không có `discountPercent`; nhãn tin chỉ gồm `NEW`, `HOT`.
-- **Tổng quan chủ máy** (`/host`): chưa có API số liệu riêng; dựng từ `GET /host/bookings` và `GET /host/cameras`.
+- **Giỏ hàng:** không có. Mỗi lần đặt là một đơn gồm nhiều món (thân máy, ống kính, film). Header bỏ nút giỏ hàng hoặc đổi thành lối tắt tới "Đơn của tôi".
+- **Đánh giá của khách:** chưa có. Trang chủ và chi tiết máy dùng nội dung mẫu cố định hoặc ẩn khối này.
+- **Thanh toán online:** chưa có. Trang đặt thuê phải ghi rõ "Bạn thanh toán tại cửa hàng khi nhận máy".
+- **Trang chính sách, hướng dẫn:** nội dung tĩnh do shop cung cấp.
 
 ---
 
-## 3. USER STORIES
+## 3. HỢP ĐỒNG API
 
-Định dạng: **Là** (vai trò), **tôi muốn** (việc), **để** (lý do). Dưới mỗi story là tiêu chí chấp nhận.
+> 🌐 công khai · 🌐* công khai, token tùy chọn · 🔑 cần đăng nhập · 🧑‍💼 STAFF hoặc ADMIN · 🛡 chỉ ADMIN.
+> Ví dụ chỉ nêu các trường chính. BE chỉ **thêm** trường, không đổi tên hay xóa trường đã thỏa thuận mà không báo trước.
 
-### 3.1 Tài khoản
-
-**US-01 Đăng ký** — Là khách, tôi muốn tạo tài khoản bằng email để có thể đặt thuê máy.
-- Nhập họ tên, email, số điện thoại, mật khẩu (tối thiểu 8 ký tự), tích đồng ý điều khoản.
-- Email trùng thì hiện lỗi dưới ô email (`EMAIL_ALREADY_USED`).
-- Thành công thì tự đăng nhập và chuyển về trang trước đó (`next`) hoặc `/`.
-
-**US-02 Đăng nhập / đăng xuất** — Là người dùng, tôi muốn đăng nhập để truy cập đơn và tin đăng của mình.
-- Sai thông tin thì hiện "Email hoặc mật khẩu không đúng" (`INVALID_CREDENTIALS`), không nói cụ thể cái nào sai.
-- Đăng xuất gọi `POST /auth/logout` rồi xóa token trong bộ nhớ.
-- Reload trang vẫn giữ đăng nhập (FE gọi `POST /auth/refresh` khi khởi động ứng dụng).
-
-**US-03 Cập nhật hồ sơ** — Là người dùng, tôi muốn sửa họ tên, số điện thoại, ảnh đại diện.
-- Ảnh đại diện tải theo luồng hai bước (xin URL → `PUT` file → `PATCH /me` với `avatarPath`); tối đa 2 MB, JPG/PNG/WebP.
-
-**US-04 Chuyển chế độ thuê / cho thuê** — Là người dùng, tôi muốn chuyển qua lại giữa "Chế độ thuê" và "Chế độ cho thuê" trong menu tài khoản.
-- Nếu `roles` chưa có `HOST`: bấm "Chế độ cho thuê" dẫn tới `/host/onboarding`.
-- Nếu đã có `HOST`: dẫn tới `/host`.
-
-**US-05 Bật vai trò chủ máy** — Là người dùng, tôi muốn trở thành chủ máy để đăng máy cho thuê.
-- Cần có họ tên và số điện thoại trong hồ sơ; thiếu thì lỗi `VALIDATION_ERROR` kèm `fields`.
-- Sau khi bật, `GET /me` trả `roles` có `HOST`.
-
-**US-06 Xác minh danh tính** — Là chủ máy, tôi muốn gửi ảnh CCCD và selfie để được gắn huy hiệu "Đã xác minh".
-- Tải 3 ảnh (mặt trước, mặt sau, selfie) lên URL do BE cấp, rồi gửi hồ sơ.
-- Trang gọi `GET /me/kyc` để hiển thị trạng thái (Chưa gửi / Đang chờ / Đã xác minh / Bị từ chối kèm `rejectReason`). Bị từ chối thì cho gửi lại.
-
-### 3.2 Tìm và xem máy (người thuê, cả khách vãng lai)
-
-**US-10 Xem trang chủ** — Là khách, tôi muốn thấy máy nổi bật và danh mục để bắt đầu tìm.
-- Máy nổi bật lấy bằng `GET /cameras?badge=HOT`; nếu chưa có máy nào được gắn nhãn Hot thì dùng `sort=newest`.
-
-**US-11 Tìm và lọc máy** — Là người thuê, tôi muốn lọc theo ngày thuê, giá, danh mục, hãng, khu vực để thấy máy phù hợp.
-- Mọi bộ lọc và sắp xếp nằm trong URL query để chia sẻ được.
-- Sidebar hiển thị số lượng `(n)` cho từng khoảng giá, danh mục, hãng (lấy từ `facets`).
-- Khi chọn ngày nhận/trả, chỉ hiện máy còn trống trong khoảng đó.
-- Phân trang 32 máy mỗi trang.
-
-**US-12 Xem chi tiết máy** — Là người thuê, tôi muốn xem ảnh, thông số, tình trạng, phụ kiện kèm, giá, tiền cọc, chủ máy, chính sách hủy.
-- Lịch hiển thị ngày hết máy dựa trên `unavailableDates`; không cho chọn khoảng chứa ngày kín.
-- Chọn xong khoảng ngày thì hiện tóm tắt chi phí (tiền thuê, cọc, phí dịch vụ, tổng) từ `POST /bookings/quote`.
-
-**US-13 Yêu thích máy** — Là người thuê, tôi muốn lưu máy vào danh sách yêu thích.
-- Chưa đăng nhập mà bấm tim thì chuyển tới `/login?next=...`.
-
-**US-14 Tìm nhanh bằng từ khóa** — Là người thuê, tôi muốn gõ tên máy ở ô tìm kiếm trên header để tới danh sách kết quả.
-- Gửi `q` tới `GET /cameras`; tìm không phân biệt hoa thường và **không cần gõ dấu** (gõ "may anh" vẫn ra "máy ảnh").
-- Bấm tìm chuyển tới `/rent?q=...`.
-
-**US-15 Xem hồ sơ chủ máy** — Là người thuê, tôi muốn xem hồ sơ công khai của chủ máy (huy hiệu xác minh, ngày tham gia, các máy đang cho thuê) để yên tâm trước khi thuê.
-- Chủ máy không tồn tại hoặc chưa bật vai trò HOST thì `404`.
-
-### 3.3 Đặt thuê (người thuê)
-
-**US-20 Gửi yêu cầu thuê** — Là người thuê, tôi muốn chọn ngày và gửi yêu cầu thuê đến chủ máy.
-- Trang `/checkout` hiển thị lại máy, ngày, bảng chi phí; nút "Gửi yêu cầu thuê".
-- Đơn mới có trạng thái `PENDING`; sau khi gửi chuyển tới `/bookings/[id]`.
-- Ngày vừa bị người khác đặt: hiện lỗi `BOOKING_DATE_UNAVAILABLE` và cho chọn lại ngày.
-- Máy của chính mình: hiện lỗi `CANNOT_BOOK_OWN_CAMERA`.
-- **Lưu ý:** giai đoạn này **chưa có thanh toán**. Hiển thị rõ "Chủ máy sẽ xác nhận trong 24 giờ; bạn chưa bị trừ tiền".
-
-**US-21 Xem đơn của tôi** — Là người thuê, tôi muốn xem danh sách và trạng thái các đơn.
-- Mỗi đơn có badge trạng thái theo bảng 1.5.
-
-**US-22 Xem chi tiết và hủy đơn** — Là người thuê, tôi muốn xem chi tiết đơn và hủy khi còn được phép.
-- Nút "Hủy đơn" chỉ hiện khi `allowedActions` chứa `"cancel"`.
-- Đơn `PENDING` quá 24 giờ chưa được duyệt sẽ tự chuyển `CANCELLED` (FE chỉ cần hiển thị theo trạng thái trả về).
-
-### 3.4 Chủ máy
-
-**US-30 Đăng máy** — Là chủ máy, tôi muốn tạo tin đăng với ảnh, thông số, giá, cọc để cho thuê.
-- Form nhiều bước: (1) loại máy, hãng, model; (2) thông số và tình trạng (số shutter với máy digital, khổ film với máy film); (3) ảnh (kéo thả, tối đa 10 ảnh, sắp xếp được); (4) giá/ngày, giá/tuần (tùy chọn), tiền cọc, khu vực; (5) phụ kiện kèm và chính sách hủy; (6) xem lại và gửi duyệt.
-- Có thể lưu nháp ở mọi bước (`DRAFT`). Các trường bắt buộc khi gửi duyệt (`submit`): ít nhất 1 ảnh, `title`, `model`, `cameraType`, danh mục, hãng, `pricePerDay`, `deposit`, `city`, `district`. Các trường còn lại là tùy chọn.
-- Gửi duyệt xong tin chuyển `PENDING_REVIEW` và không sửa được các trường chính cho đến khi có kết quả.
-
-**US-31 Quản lý tin đăng** — Là chủ máy, tôi muốn thấy tất cả tin của mình kèm trạng thái, sửa, tạm ẩn/hiện lại.
-- Tin bị từ chối hiện lý do (`rejectReason`).
-
-**US-32 Duyệt hoặc từ chối đơn** — Là chủ máy, tôi muốn xem đơn gửi đến và duyệt hoặc từ chối.
-- Trang đơn nhận có lọc theo trạng thái; đơn `PENDING` hiện nổi bật.
-- Nút "Duyệt" / "Từ chối" chỉ hiện khi có trong `allowedActions`. Từ chối nên kèm lý do (tùy chọn).
-
-**US-33 Chặn lịch** — Là chủ máy, tôi muốn chặn những ngày không cho thuê (đi vắng, máy đang dùng riêng) và bỏ chặn khi cần.
-- Danh sách các khoảng đã chặn lấy từ `GET /host/blocked-dates` (có `id` để xóa).
-- Lịch hiển thị ba loại ngày: trống, có đơn, tự chặn.
-- Chặn trùng ngày đã có đơn thì lỗi `BOOKING_DATE_UNAVAILABLE`.
-
-### 3.5 Admin
-
-**US-40 Duyệt tin đăng** — Là admin, tôi muốn xem hàng chờ tin `PENDING_REVIEW` và duyệt hoặc từ chối kèm lý do.
-
-**US-41 Duyệt KYC** — Là admin, tôi muốn xem hồ sơ KYC và xác minh hoặc từ chối.
-- Ảnh giấy tờ được xem qua URL có thời hạn, không hiển thị công khai.
-
----
-
-## 4. HỢP ĐỒNG API
-
-> Ký hiệu: 🌐 public · 🔑 cần đăng nhập · 🏠 cần role HOST · 🛡 cần role ADMIN.
-> Mọi ví dụ response dưới đây chỉ nêu các trường chính; BE có thể **thêm** trường mới, nhưng sẽ không đổi tên hoặc xóa trường đã thỏa thuận mà không báo trước.
-
-### 4.1 Xác thực và tài khoản
+### 3.1 Xác thực và tài khoản
 
 **🌐 `POST /auth/register`**
 ```json
 // request
 { "fullName": "Nguyễn Văn A", "email": "a@example.com", "phone": "0912345678", "password": "matkhau123" }
-// 201
+// 201 (kèm Set-Cookie refresh token)
 { "accessToken": "eyJ...", "user": { "id": "u1", "fullName": "Nguyễn Văn A", "email": "a@example.com", "roles": ["RENTER"] } }
 ```
-Lỗi: `409 EMAIL_ALREADY_USED`, `400 VALIDATION_ERROR`.
+Lỗi: `409 EMAIL_ALREADY_USED`, `400 VALIDATION_ERROR` (mật khẩu tối thiểu 8 ký tự; số điện thoại 10 số bắt đầu bằng 0).
 
-**🌐 `POST /auth/login`**
-```json
-// request
-{ "email": "a@example.com", "password": "matkhau123" }
-// 200 (kèm Set-Cookie refresh token)
-{ "accessToken": "eyJ...", "user": { "id": "u1", "fullName": "...", "email": "...", "roles": ["RENTER"] } }
-```
-Lỗi: `401 INVALID_CREDENTIALS`, `429 RATE_LIMITED`.
+**🌐 `POST /auth/login`** — body `{ "email", "password" }` → `200` cùng cấu trúc register. Lỗi: `401 INVALID_CREDENTIALS`, `403 ACCOUNT_SUSPENDED`, `429 RATE_LIMITED`.
 
-**🌐 `POST /auth/refresh`** (không body, dựa vào cookie) → `200 { "accessToken": "eyJ..." }`. Lỗi: `401 UNAUTHENTICATED`.
-
+**🌐 `POST /auth/refresh`** — không body, dựa vào cookie → `200 { "accessToken": "eyJ..." }`. Lỗi: `401 UNAUTHENTICATED`.
 **🔑 `POST /auth/logout`** → `204`.
 
 **🔑 `GET /me`**
 ```json
-{
-  "id": "u1", "fullName": "Nguyễn Văn A", "email": "a@example.com", "phone": "0912345678",
-  "avatarUrl": null, "roles": ["RENTER", "HOST"], "kycStatus": "VERIFIED"
-}
+{ "id": "u1", "fullName": "Nguyễn Văn A", "email": "a@example.com", "phone": "0912345678", "avatarUrl": null, "roles": ["RENTER"] }
 ```
+**🔑 `PATCH /me`** — body gồm các trường cần đổi: `fullName`, `phone`, `avatarPath` (`null` để xóa ảnh) → trả lại `me`. `avatarPath` phải là path nhận từ `/me/avatar/presign` của chính mình, nếu không `400`.
+**🔑 `POST /me/avatar/presign`** — body `{ "contentType": "image/jpeg" }` → `{ "uploadUrl": "https://...", "path": "avatars/u1/abc.jpg", "token": "..." }`. FE `PUT` file lên `uploadUrl` (kèm đúng `Content-Type`), rồi `PATCH /me` với `avatarPath`. Ảnh JPG/PNG/WebP, tối đa 2 MB.
 
-**🔑 `PATCH /me`** — body gồm các trường cần đổi (`fullName`, `phone`, `avatarPath`) → trả lại đối tượng `me` (có `avatarUrl` đầy đủ, BE tự dựng từ `avatarPath`). `avatarPath` phải là path nhận được từ `/me/avatar/presign` của chính mình, nếu không `400 VALIDATION_ERROR`. Gửi `"avatarPath": null` để xóa ảnh.
+### 3.2 Chi nhánh, danh mục, hãng, film
 
-**🔑 `POST /me/become-host`** (không body) → `200` trả `me` mới (có `HOST`). Lỗi: `400 VALIDATION_ERROR` nếu thiếu họ tên hoặc số điện thoại.
+**🌐 `GET /branches`** → `{ "items": [ { "id": "b1", "slug": "tay-ho", "name": "Chi nhánh Tây Hồ", "address": "...", "phone": "0866747114", "openHours": "09:00 – 21:00", "mapUrl": "https://..." } ] }`
 
-**🔑 `POST /me/kyc/presign`**
-```json
-// request
-{ "files": [ { "kind": "ID_FRONT", "contentType": "image/jpeg" }, { "kind": "ID_BACK", "contentType": "image/jpeg" }, { "kind": "SELFIE", "contentType": "image/jpeg" } ] }
-// 200
-{ "uploads": [ { "kind": "ID_FRONT", "uploadUrl": "https://...", "path": "kyc/u1/front.jpg" }, ... ] }
-```
-FE dùng `PUT` tải từng file lên `uploadUrl` (kèm đúng header `Content-Type`), rồi gọi:
-
-**🔑 `POST /me/kyc`** — body `{ "idFrontPath": "...", "idBackPath": "...", "selfiePath": "..." }` → `200 { "kycStatus": "PENDING" }`.
-
-**🔑 `GET /me/kyc`** — hồ sơ xác minh mới nhất của tôi.
-```json
-{ "status": "REJECTED", "rejectReason": "Ảnh CCCD bị mờ", "submittedAt": "2026-11-07T08:30:00Z", "reviewedAt": "2026-11-08T02:00:00Z" }
-```
-Chưa từng gửi: `{ "status": "NONE", "rejectReason": null, "submittedAt": null, "reviewedAt": null }`.
-
-**🔑 `POST /me/avatar/presign`**
-```json
-// request
-{ "contentType": "image/jpeg" }
-// 200
-{ "uploadUrl": "https://...", "path": "avatars/u1/abc.jpg" }
-```
-FE `PUT` file lên `uploadUrl` rồi gọi `PATCH /me` với `avatarPath`.
-
-### 4.2 Danh mục và hãng
-
-**🌐 `GET /categories`** → cây danh mục
+**🌐 `GET /categories`** → cây:
 ```json
 { "items": [
-  { "id": "c1", "slug": "may-anh", "name": "Máy ảnh", "type": "CAMERA_DIGITAL",
-    "children": [ { "id": "c2", "slug": "digital-mirrorless", "name": "Digital Mirrorless", "children": [] } ] }
+  { "id": "c1", "slug": "may-film", "name": "Máy film", "children": [
+      { "id": "c2", "slug": "film-compact", "name": "Compact 35mm", "children": [] },
+      { "id": "c3", "slug": "film-rangefinder", "name": "Rangefinder", "children": [] } ] }
 ] }
 ```
+**🌐 `GET /brands`** → `{ "items": [ { "id": "br1", "slug": "fujifilm", "name": "Fujifilm" } ] }`
+**🌐 `GET /film-products`** → `{ "items": [ { "id": "f1", "name": "Kodak Gold 200", "iso": 200, "format": "35mm", "price": 180000, "inStock": true, "imageUrl": "https://..." } ] }`
 
-**🌐 `GET /brands`** → `{ "items": [ { "id": "b1", "slug": "sony", "name": "Sony" } ] }`
+### 3.3 Mẫu máy
 
-### 4.3 Tìm và xem máy
+**🌐\* `GET /models`**
 
-**🌐 `GET /cameras`**
-
-Query: `q`, `category` (slug, nhiều giá trị cách nhau dấu phẩy), `brand` (slug, nhiều giá trị), `mount`, `cameraType` (`DIGITAL|FILM`), `minPrice`, `maxPrice` (VND/ngày), `city`, `district`, `from`, `to` (cả hai cùng có mới lọc ngày trống), `sort` (`default` | `price_asc` | `price_desc` | `newest`), `badge` (`HOT` | `NEW`), `excludeId`, `page`, `pageSize`.
+Query: `q` (tìm theo tên, hãng; không phân biệt dấu), `category` (slug, nhiều giá trị cách nhau dấu phẩy; chọn danh mục cha thì gồm cả danh mục con), `brand` (slug, nhiều giá trị), `kind`, `cameraType`, `mount`, `minPrice`, `maxPrice` (giá/ngày), `branch` (slug), `from`+`to` (cả hai cùng có mới lọc ngày trống), `featured` (`true`), `excludeId`, `sort` (`default` | `price_asc` | `price_desc` | `newest`), `page`, `pageSize`.
 
 ```json
 {
   "items": [
     {
-      "id": "cam1", "slug": "fujifilm-x100vi-ha-noi", "title": "Fujifilm X100VI",
-      "cameraType": "DIGITAL", "brand": { "slug": "fujifilm", "name": "Fujifilm" },
-      "category": { "slug": "compact", "name": "Compact" },
-      "pricePerDay": 450000, "pricePerWeek": 2500000, "deposit": 8000000,
-      "city": "Hà Nội", "district": "Tây Hồ",
-      "thumbnailUrl": "https://...", "badges": ["NEW"],
-      "accessories": [ { "name": "Pin dự phòng", "icon": "battery" } ],
-      "host": { "id": "u2", "fullName": "Trần B", "verified": true },
-      "isFavorite": false,
-      "availableForRange": true
+      "id": "m1", "slug": "fujifilm-x100v", "name": "Fujifilm X100V", "kind": "CAMERA", "cameraType": "DIGITAL",
+      "brand": { "slug": "fujifilm", "name": "Fujifilm" }, "category": { "slug": "digital-compact", "name": "Compact" },
+      "mount": null, "pricePerDay": 450000, "pricePerWeek": 2500000, "deposit": 8000000,
+      "thumbnailUrl": "https://...", "isFeatured": true, "badges": ["NEW"], "isFavorite": false,
+      "availableAtBranches": ["tay-ho"]
     }
   ],
-  "page": 1, "pageSize": 32, "total": 199,
+  "page": 1, "pageSize": 20, "total": 40,
   "facets": {
-    "price": [
-      { "key": "lt100k",   "min": 0,      "max": 100000, "count": 90 },
-      { "key": "100k-300k","min": 100000, "max": 300000, "count": 68 },
-      { "key": "300k-600k","min": 300000, "max": 600000, "count": 36 },
-      { "key": "gte600k",  "min": 600000, "max": null,   "count": 12 }
-    ],
-    "categories": [ { "slug": "compact", "name": "Compact", "parentSlug": "may-anh", "count": 2 } ],
-    "brands": [ { "slug": "sony", "name": "Sony", "count": 14 } ]
+    "price": [ { "key": "lt100k", "min": 0, "max": 100000, "count": 8 }, { "key": "100k-300k", "min": 100000, "max": 300000, "count": 20 },
+               { "key": "300k-600k", "min": 300000, "max": 600000, "count": 9 }, { "key": "gte600k", "min": 600000, "max": null, "count": 3 } ],
+    "categories": [ { "slug": "film-compact", "name": "Compact 35mm", "parentSlug": "may-film", "count": 6 } ],
+    "brands": [ { "slug": "fujifilm", "name": "Fujifilm", "count": 5 } ]
   }
 }
 ```
-- `isFavorite` nằm trong cấu trúc thẻ máy tóm tắt (`CameraSummary` dùng chung cho `GET /cameras`, `GET /favorites`, danh sách máy trong `GET /hosts/:id`). Với các endpoint công khai này, header token là tùy chọn: có token thì tính `isFavorite` theo người dùng, không có thì `false`.
-- `badges` có thể gồm `NEW` (tự gắn cho tin mới được duyệt trong 14 ngày) và `HOT` (admin gắn tay). Chưa có giảm giá.
-- `availableForRange` chỉ có khi truyền `from` và `to`.
-- Số lượng trong `facets` được tính theo các bộ lọc **khác** đang áp dụng, để sidebar luôn đúng.
-- Chỉ trả máy `ACTIVE`.
-- `q`: tìm theo tiêu đề, model và tên hãng; không phân biệt hoa thường, **không phân biệt dấu tiếng Việt**.
-- `badge=HOT`: dùng cho "máy nổi bật" ở trang chủ.
-- **Máy tương tự** (ở trang chi tiết): gọi `GET /cameras?category=<slug danh mục của máy>&excludeId=<id máy đang xem>&pageSize=4`. `excludeId` loại máy đó khỏi kết quả.
+- Chỉ trả mẫu đang hoạt động (`isActive`).
+- `availableAtBranches` chỉ có khi truyền `from` và `to`: danh sách chi nhánh còn ít nhất một chiếc trống. Truyền thêm `branch` thì chỉ lọc theo chi nhánh đó.
+- `badges` có thể gồm `NEW` (mẫu mới thêm trong 14 ngày). `isFavorite` luôn `false` với khách vãng lai.
+- Số lượng trong `facets` tính theo các bộ lọc **khác** đang áp dụng. Khoảng giá có thể chỉnh sau khi shop chốt bảng giá.
+- **Ống kính tương thích:** gọi `GET /models?kind=LENS&mount=<ngàm của thân máy>`.
+- **Máy tương tự:** `GET /models?category=<slug>&excludeId=<id>&pageSize=4`.
 
-**🌐 `GET /cameras/:slug`**
+**🌐\* `GET /models/:slug`**
 ```json
 {
-  "id": "cam1", "slug": "fujifilm-x100vi-ha-noi", "title": "Fujifilm X100VI",
-  "description": "...", "model": "X100VI", "cameraType": "DIGITAL", "mount": null,
-  "shutterCount": 3200, "filmFormat": null, "conditionNote": "Máy như mới, có trầy nhẹ ở viền",
-  "brand": { "slug": "fujifilm", "name": "Fujifilm" },
-  "category": { "slug": "compact", "name": "Compact" },
-  "pricePerDay": 450000, "pricePerWeek": 2500000, "deposit": 8000000,
-  "city": "Hà Nội", "district": "Tây Hồ",
-  "images": [ { "id": "i1", "url": "https://...", "sortOrder": 0 } ],
-  "accessories": [ { "name": "Pin dự phòng", "icon": "battery" } ],
-  "cancellationPolicy": "Hủy trước 24 giờ được hoàn toàn bộ.",
-  "host": { "id": "u2", "fullName": "Trần B", "avatarUrl": null, "verified": true, "completedRentals": 0 },
+  "id": "m2", "slug": "olympus-xa", "name": "Olympus XA", "kind": "CAMERA", "cameraType": "FILM",
+  "description": "Máy film 35mm rangefinder siêu nhỏ gọn...", "mount": null, "filmFormat": "35mm",
+  "brand": { "slug": "olympus", "name": "Olympus" }, "category": { "slug": "film-rangefinder", "name": "Rangefinder" },
+  "pricePerDay": 250000, "pricePerWeek": 1400000, "deposit": 3000000,
+  "images": [ { "id": "i1", "url": "https://...", "kind": "PRODUCT", "caption": null, "sampleLens": null },
+              { "id": "i2", "url": "https://...", "kind": "SAMPLE", "caption": "Chân dung buổi chiều", "sampleLens": "35mm f/2.8" } ],
+  "specs": { "exposure": { "apertureRange": "f/2.8 – f/22", "shutterRange": "2s – 1/500", "metering": "Đo sáng tự động", "focus": "Lấy nét tay" },
+             "controls": [ { "name": "Vòng khẩu độ", "location": "Thân máy", "how": "Xoay tới giá trị f" } ],
+             "power": "Pin LR44", "quirks": [], "beginnerNotes": [] },
+  "inspection": { "lastInspectedAt": "2026-11-01T00:00:00Z", "items": [ { "label": "Đo sáng hoạt động", "ok": true }, { "label": "Màn trập chính xác", "ok": true }, { "label": "Ống kính sạch, không mốc", "ok": true } ] },
+  "availableAtBranches": ["tay-ho", "thanh-xuan"],
+  "aiSetupAvailable": true,
   "isFavorite": false
 }
 ```
-`isFavorite` chỉ chính xác khi có token; khách vãng lai luôn `false`. Không có hoặc không `ACTIVE` thì `404 NOT_FOUND`.
+`specs` và `inspection` có thể `null` nếu admin chưa nhập; FE ẩn mục tương ứng. `aiSetupAvailable` chỉ `true` khi thông số đã đủ để dùng Trợ lý AI. Mẫu không tồn tại hoặc đang ẩn: `404`.
 
-**🌐 `GET /cameras/:id/availability?month=2026-12`**
+**🌐 `GET /models/:id/availability?branch=tay-ho&month=2026-12`**
 ```json
-{ "month": "2026-12", "unavailableDates": ["2026-12-03", "2026-12-04"], "blockedByHostDates": ["2026-12-10"] }
+{ "month": "2026-12", "branch": "tay-ho", "unavailableDates": ["2026-12-03", "2026-12-04"] }
 ```
-`unavailableDates` là ngày đã có đơn; `blockedByHostDates` là ngày chủ máy tự chặn. Chủ sở hữu máy (🏠) thấy cả hai nhóm để vẽ lịch ba màu; người khác nên gộp cả hai thành "hết máy".
+Một ngày là "hết" khi **không còn chiếc nào trống** ở chi nhánh đó (tất cả đã có đơn hoặc đang bảo trì). `branch` bắt buộc.
 
-**🌐 `POST /bookings/quote`** — tính tiền trước khi đặt, **không** giữ chỗ.
+### 3.4 Báo giá và đặt thuê
+
+**🌐 `POST /bookings/quote`** — tính tiền, kiểm tra còn trống, **không giữ chỗ**.
 ```json
 // request
-{ "cameraId": "cam1", "startDate": "2026-12-12", "endDate": "2026-12-15" }
+{ "branchSlug": "tay-ho", "startDate": "2026-12-12", "endDate": "2026-12-15",
+  "items": [ { "modelId": "m2" }, { "modelId": "m9" } ],
+  "addons": [ { "filmProductId": "f1", "quantity": 2 } ] }
 // 200
 {
-  "days": 3, "pricePerDay": 450000,
-  "rentalAmount": 1350000, "depositAmount": 8000000, "platformFee": 135000,
-  "totalDueAtPickup": 9350000, "available": true
+  "days": 3, "available": true, "unavailableModelIds": [],
+  "lines": [ { "modelId": "m2", "name": "Olympus XA", "pricePerDay": 250000, "rentalAmount": 750000, "depositAmount": 3000000 } ],
+  "addons": [ { "filmProductId": "f1", "name": "Kodak Gold 200", "quantity": 2, "unitPrice": 180000, "amount": 360000 } ],
+  "rentalAmount": 750000, "addonsAmount": 360000, "depositAmount": 3000000, "totalDueAtPickup": 4110000
 }
 ```
-`available: false` kèm `conflictingDates` khi khoảng ngày không còn trống. `totalDueAtPickup` = tiền thuê + phí + cọc.
+- `items` có ít nhất một món `CAMERA`. Ống kính (`LENS`) phải cùng ngàm với một thân máy trong đơn, nếu không `422 INCOMPATIBLE_ITEMS`.
+- `available: false` kèm `unavailableModelIds` khi có món hết máy.
+- `totalDueAtPickup` = tiền thuê + tiền film + **cọc**. Cọc được **hoàn lại** khi trả máy nếu không hỏng; FE phải hiển thị dòng này riêng.
 
-### 4.3a Hồ sơ chủ máy công khai
+**🔑 `POST /bookings`** — tạo yêu cầu (`PENDING`)
+```json
+{ "branchSlug": "tay-ho", "startDate": "2026-12-12", "endDate": "2026-12-15",
+  "items": [ { "modelId": "m2" } ], "addons": [],
+  "contactName": "Nguyễn Văn A", "contactPhone": "0912345678", "note": "Mình đến nhận lúc 9h", "setupPlanId": null }
+```
+→ `201` trả đối tượng đơn (xem dưới). Lỗi: `409 NO_UNIT_AVAILABLE`, `422 MODEL_NOT_BOOKABLE`, `422 INCOMPATIBLE_ITEMS`, `400 VALIDATION_ERROR` (ngày trả không sau ngày nhận, ngày nhận ở quá khứ).
 
-**🌐 `GET /hosts/:id`**
+**Đối tượng đơn**
 ```json
 {
-  "id": "u2", "fullName": "Trần B", "avatarUrl": null, "verified": true,
-  "completedRentals": 0, "joinedAt": "2026-10-01T00:00:00Z",
-  "cameras": {
-    "items": [ /* cùng cấu trúc CameraSummary như GET /cameras, chỉ tin ACTIVE của chủ máy này */ ],
-    "page": 1, "pageSize": 12, "total": 5
+  "id": "bk1", "code": "BR-8K2F9", "status": "PENDING", "isOverdue": false,
+  "branch": { "id": "b1", "slug": "tay-ho", "name": "Chi nhánh Tây Hồ", "address": "...", "phone": "0866747114" },
+  "startDate": "2026-12-12", "endDate": "2026-12-15", "days": 3,
+  "items": [ { "modelId": "m2", "name": "Olympus XA", "kind": "CAMERA", "thumbnailUrl": "https://...", "pricePerDay": 250000, "rentalAmount": 750000, "depositAmount": 3000000 } ],
+  "addons": [ { "name": "Kodak Gold 200", "quantity": 2, "unitPrice": 180000, "amount": 360000 } ],
+  "rentalAmount": 750000, "addonsAmount": 360000, "depositAmount": 3000000, "totalDueAtPickup": 4110000,
+  "contactName": "Nguyễn Văn A", "contactPhone": "0912345678", "note": "Mình đến nhận lúc 9h",
+  "createdAt": "2026-11-07T08:30:00Z", "expiresAt": "2026-11-08T08:30:00Z",
+  "confirmedAt": null, "pickedUpAt": null, "returnedAt": null, "completedAt": null,
+  "rejectedReason": null, "cancelledReason": null,
+  "payments": [], "handovers": [], "setupPlan": null,
+  "viewerRole": "CUSTOMER", "allowedActions": ["cancel"]
+}
+```
+- `expiresAt` chỉ có nghĩa khi `PENDING` (quá hạn không ai xử lý thì tự `CANCELLED`).
+- `payments`: `[ { "type": "DEPOSIT_RECEIVED", "amount": 3000000, "method": "CASH", "note": null, "createdAt": "..." } ]`. Nhân viên thấy thêm `recordedBy`.
+- `handovers`: `[ { "kind": "PICKUP", "checklist": [ { "item": "Thân máy", "ok": true, "note": null } ], "conditionNotes": "Xước nhẹ ở nắp pin", "photoUrls": ["https://...(có thời hạn)"], "idChecked": true, "createdAt": "..." } ]`. `photoUrls` là URL tạm, FE không lưu lại. Khách chỉ xem biên bản của đơn mình.
+- Với nhân viên và admin, đơn có thêm `customer: { id, fullName, email, phone }` và `units: [ { "modelId": "m2", "serialNumber": "OXA-0042" } ]`.
+- `setupPlan`: kế hoạch cấu hình AI đính kèm đơn (xem 3.6), hoặc `null`.
+
+**🔑 `GET /bookings?status=&page=`** — đơn của tôi (mỗi phần tử là đối tượng đơn rút gọn: bỏ `payments`, `handovers`, `setupPlan`).
+**🔑 `GET /bookings/:id`** — khách chỉ xem đơn của mình; STAFF và ADMIN xem được mọi đơn; trường hợp khác `404`.
+**🔑 `POST /bookings/:id/cancel`** — body `{ "reason": "..." }` (tùy chọn). Khách chỉ hủy được khi `PENDING` hoặc `CONFIRMED`. Trả đơn mới. Lỗi: `409 INVALID_STATUS_TRANSITION`.
+
+### 3.5 Yêu thích
+
+- 🔑 `POST /favorites/:modelId` → `204`; 🔑 `DELETE /favorites/:modelId` → `204`.
+- 🔑 `GET /favorites?page=` → cùng cấu trúc `items` như `GET /models`, không có `facets`.
+
+### 3.6 Trợ lý cấu hình bằng AI (P3)
+
+**🔑 `POST /ai/camera-setup`**
+```json
+// request
+{ "modelId": "m2", "scene": "OUTDOOR_SUNNY", "customText": "Chụp chân dung bạn ở hồ Tây", "filmIso": 200,
+  "lensModelId": null, "experience": "BEGINNER", "bookingId": null }
+// 200
+{
+  "planId": "sp1", "fromFallback": false,
+  "disclaimer": "Gợi ý tham khảo, nhân viên sẽ kiểm tra lại khi giao máy.",
+  "result": {
+    "summary": "Chụp chân dung ngoài trời lúc nắng nhẹ, film ISO 200",
+    "settings": { "aperture": "f/5.6", "shutterSpeed": "1/250", "film": "ISO 200", "metering": "Đo sáng trong máy", "focus": "Lấy nét tay" },
+    "steps": [ "Đặt ISO của máy theo cuộn film", "Xoay vòng khẩu độ tới f/5.6" ],
+    "tips": [ "Đứng cách chủ thể khoảng 1,5 đến 2 m" ],
+    "warnings": [ "Nếu trời tối hơn, không hạ tốc độ dưới 1/60" ]
   }
 }
 ```
-Query: `page`, `pageSize` (áp dụng cho `cameras`). Không có người dùng này, hoặc người này chưa có vai trò `HOST`: `404 NOT_FOUND`. Không trả email, số điện thoại.
+- `scene`: `OUTDOOR_SUNNY`, `OUTDOOR_CLOUDY`, `INDOOR`, `PORTRAIT`, `STREET`, `NIGHT`, `TRAVEL`, `OTHER`. `experience`: `BEGINNER`, `INTERMEDIATE`, `ADVANCED`. `customText` tối đa 300 ký tự.
+- `fromFallback: true` nghĩa là AI không trả đúng định dạng nên BE trả hướng dẫn tĩnh của mẫu máy (FE hiển thị bình thường, có thể ghi chú).
+- Lỗi: `429 RATE_LIMITED` (hết lượt trong ngày), `503 AI_UNAVAILABLE`, `404` nếu mẫu máy chưa có thông số (`aiSetupAvailable = false`).
+- **🔑 `GET /ai/camera-setup/:planId`** — xem lại kế hoạch của tôi. **🔑 `POST /ai/camera-setup/:planId/feedback`** — body `{ "helpful": true }` → `204`.
+- Gắn vào đơn: gửi `setupPlanId` khi `POST /bookings`.
 
-### 4.4 Yêu thích
+### 3.7 Nhân viên (🧑‍💼)
 
-- 🔑 `POST /favorites/:cameraId` → `204`. 🔑 `DELETE /favorites/:cameraId` → `204`.
-- 🔑 `GET /favorites?page=1` → danh sách có cùng cấu trúc `items` như `GET /cameras` (không có `facets`).
+**`GET /staff/dashboard`**
+```json
+{ "pendingCount": 3, "pickupsToday": [ /* đơn rút gọn */ ], "returnsToday": [ /* đơn rút gọn */ ], "overdue": [ /* đơn rút gọn */ ] }
+```
+Lọc theo `?branch=` (slug), mặc định tất cả chi nhánh.
 
-### 4.5 Đơn thuê
+**`GET /staff/bookings?status=&branch=&date=&overdue=&q=&page=`** — `date` lọc đơn có ngày nhận hoặc trả đúng ngày đó; `overdue=true` chỉ đơn quá hạn; `q` tìm theo mã đơn, tên, số điện thoại.
 
-Cấu trúc đơn dùng chung:
+**Chuyển trạng thái** (mọi endpoint trả đối tượng đơn mới; sai trạng thái `409 INVALID_STATUS_TRANSITION`):
+
+| Endpoint | Từ → Đến | Body |
+|---|---|---|
+| `POST /staff/bookings/:id/confirm` | `PENDING → CONFIRMED` | không |
+| `POST /staff/bookings/:id/reject` | `PENDING → REJECTED` | `{ "reason": "..." }` (bắt buộc) |
+| `POST /staff/bookings/:id/pickup` | `CONFIRMED → PICKED_UP` | xem dưới |
+| `POST /staff/bookings/:id/return` | `PICKED_UP → RETURNED` | xem dưới |
+| `POST /staff/bookings/:id/complete` | `RETURNED → COMPLETED` | xem dưới |
+| `POST /staff/bookings/:id/cancel` | `PENDING`/`CONFIRMED → CANCELLED` | `{ "reason": "..." }` (bắt buộc) |
+
+**Giao máy (`pickup`)**
 ```json
 {
-  "id": "bk1", "code": "BR-8K2F9", "status": "PENDING",
-  "camera": { "id": "cam1", "slug": "fujifilm-x100vi-ha-noi", "title": "Fujifilm X100VI", "thumbnailUrl": "https://..." },
-  "renter": { "id": "u1", "fullName": "Nguyễn Văn A", "phone": "0912345678" },
-  "host":   { "id": "u2", "fullName": "Trần B", "phone": "0987654321" },
-  "startDate": "2026-12-12", "endDate": "2026-12-15", "days": 3,
-  "rentalAmount": 1350000, "depositAmount": 8000000, "platformFee": 135000,
-  "createdAt": "2026-11-07T08:30:00Z", "expiresAt": "2026-11-08T08:30:00Z",
-  "cancelledReason": null, "rejectedReason": null,
-  "viewerRole": "RENTER",
-  "allowedActions": ["cancel"]
+  "checklist": [ { "item": "Thân máy", "ok": true, "note": null }, { "item": "Dây đeo", "ok": true, "note": null } ],
+  "conditionNotes": "Xước nhẹ ở nắp pin",
+  "photoPaths": [ "handover/bk1/abc.jpg" ],
+  "idChecked": true,
+  "payments": [ { "type": "DEPOSIT_RECEIVED", "amount": 3000000, "method": "CASH", "note": null },
+                { "type": "RENTAL_RECEIVED", "amount": 1110000, "method": "BANK_TRANSFER", "note": "Chuyển khoản" } ]
 }
 ```
-- `phone` của bên kia chỉ được trả khi đơn đã `OWNER_APPROVED` (trước đó là `null`).
-- `expiresAt` chỉ có ý nghĩa khi `PENDING`: FE có thể hiển thị đếm ngược.
-- `allowedActions` có thể gồm: `cancel`, `approve`, `reject`.
+- `idChecked` phải `true` (nhân viên đã kiểm tra giấy tờ) và cần ít nhất 1 ảnh, nếu không `400 VALIDATION_ERROR`.
+- Số tiền thu phải đủ: tiền cọc ≥ `depositAmount`, tiền thuê ≥ `rentalAmount + addonsAmount`, nếu không `422 PAYMENT_INCOMPLETE`.
+- `photoPaths` là path nhận từ `/staff/handover-photos/presign` và phải thuộc đúng đơn này.
 
-**🔑 `POST /bookings`** — tạo đơn `PENDING`
+**Nhận máy (`return`)** — body `{ "checklist": [...], "conditionNotes": "...", "photoPaths": [...] }` (ít nhất 1 ảnh).
+
+**Hoàn tất (`complete`)**
 ```json
-// request
-{ "cameraId": "cam1", "startDate": "2026-12-12", "endDate": "2026-12-15", "note": "Mình lấy máy lúc 9h sáng" }
-// 201 → đối tượng đơn như trên
+{ "charges": [ { "type": "DAMAGE_CHARGE", "amount": 200000, "note": "Trầy nắp pin" } ], "refundMethod": "CASH", "note": null }
 ```
-Lỗi: `409 BOOKING_DATE_UNAVAILABLE`, `422 CANNOT_BOOK_OWN_CAMERA`, `422 CAMERA_NOT_BOOKABLE`, `400 VALIDATION_ERROR` (ngày trả không sau ngày nhận, ngày nhận ở quá khứ).
+BE tính: `hoàn cọc = cọc đã thu − tổng charges`. `charges` có thể rỗng. Tổng `charges` không được vượt tiền cọc đã thu (`400`). Kết quả được ghi thành các giao dịch `DAMAGE_CHARGE`/`LATE_FEE` và `DEPOSIT_REFUNDED`.
 
-**🔑 `GET /bookings?status=&page=`** — đơn tôi thuê → `{ items: [đơn], page, pageSize, total }`.
+**🧑‍💼 `POST /staff/handover-photos/presign`** — body `{ "bookingId": "bk1", "contentType": "image/jpeg" }` → `{ "uploadUrl": "https://...", "path": "handover/bk1/abc.jpg", "token": "..." }`. Ảnh JPG/PNG/WebP, tối đa 5 MB. Gọi một lần cho mỗi ảnh.
 
-**🏠 `GET /host/bookings?status=&page=`** — đơn gửi đến máy của tôi, cùng cấu trúc.
+**Kho và bảo trì**
+- `GET /staff/units?branch=&model=&status=&page=` → `{ items: [ { id, serialNumber, model: {id,name}, branch: {slug,name}, condition, status, notes } ] }`.
+- `GET /staff/unit-blocks?unitId=&from=&to=` → `{ items: [ { id, unitId, startDate, endDate, reason } ] }`.
+- `POST /staff/unit-blocks` — body `{ "unitId": "u1", "startDate": "2026-12-10", "endDate": "2026-12-12", "reason": "Thay pin, vệ sinh" }`. Trùng với đơn đang hoạt động: `409 BOOKING_DATE_UNAVAILABLE`.
+- `DELETE /staff/unit-blocks/:id` → `204`.
 
-**🔑 `GET /bookings/:id`** — chỉ renter, host của đơn hoặc admin xem được; người khác `404`.
+**Kế hoạch AI của đơn:** `POST /staff/setup-plans/:id/prepared` — body `{ "editedResult": { ... } }` (tùy chọn, nhân viên sửa lại) → đánh dấu đã cài sẵn khi giao máy; khách thấy trạng thái này ở chi tiết đơn.
 
-**🔑 `POST /bookings/:id/cancel`** — chỉ dành cho renter của đơn; body `{ "reason": "..." }` (tùy chọn) → trả đơn mới (`CANCELLED`). Lỗi: `409 INVALID_STATUS_TRANSITION`.
+### 3.8 Quản trị (🛡)
 
-**🏠 `POST /host/bookings/:id/approve`** (không body) → trả đơn mới (`OWNER_APPROVED`).
+CRUD theo kiểu REST (`POST` tạo, `PATCH /:id` sửa, `GET` danh sách/chi tiết, `DELETE /:id` xóa hoặc ẩn). Danh sách có phân trang và `?q=`.
 
-**🏠 `POST /host/bookings/:id/reject`** — body `{ "reason": "..." }` (tùy chọn) → trả đơn mới (`REJECTED`).
+| Nhóm | Endpoint | Trường chính |
+|---|---|---|
+| Mẫu máy | `/admin/models` | `kind`, `categoryId`, `brandId`, `name`, `slug`, `description`, `cameraType`, `mount`, `filmFormat`, `pricePerDay`, `pricePerWeek`, `deposit`, `isActive`, `isFeatured`, `lastInspectedAt`, `inspectionNotes` (`[ {label, ok} ]`) |
+| Thông số (cho AI) | `PUT /admin/models/:id/specs` | body là đối tượng `specs` (xem `BORROLL_STORE_PLAN.md` mục 5.4) |
+| Ảnh máy | `POST /admin/models/:id/images/presign` → `PUT` file → `POST /admin/models/:id/images` `{ "path", "kind", "caption", "sampleLens", "sortOrder" }`; `PATCH .../images/order` `{ "imageIds": [...] }`; `DELETE .../images/:imageId` | Ảnh JPG/PNG/WebP, tối đa 5 MB |
+| Từng chiếc máy | `/admin/units` | `modelId`, `branchId`, `serialNumber`, `condition`, `status`, `notes`, `purchasedAt` |
+| Danh mục, hãng | `/admin/categories`, `/admin/brands` | `name`, `slug`, `parentId`, `sortOrder` |
+| Chi nhánh | `/admin/branches` | `name`, `slug`, `address`, `phone`, `openHours`, `mapUrl`, `isActive` |
+| Film bán kèm | `/admin/film-products` | `name`, `iso`, `format`, `price`, `inStock` |
+| Người dùng | `GET /admin/users?q=&role=&page=`, `PATCH /admin/users/:id` | body `{ "roles": ["RENTER","STAFF"], "status": "ACTIVE" }` |
 
-### 4.6 Tin đăng của chủ máy
-
-Đối tượng tin đăng của chủ máy (`HostCamera`) gồm tất cả trường của "chi tiết máy" ở 4.3, cộng thêm:
-```json
-{ "status": "DRAFT", "rejectReason": null, "updatedAt": "2026-11-07T08:30:00Z" }
-```
-
-- **🏠 `POST /host/cameras`** — tạo `DRAFT`. Body: `categorySlug`, `brandSlug`, `title`, `model`, `cameraType`, `description`, `mount`, `shutterCount`, `filmFormat`, `conditionNote`, `pricePerDay`, `pricePerWeek`, `deposit`, `city`, `district`, `cancellationPolicy`, `accessories: [{name, icon}]`. BE tự tra `categorySlug` và `brandSlug` sang ID tương ứng (nếu slug không tồn tại trả `400 VALIDATION_ERROR` kèm `details.fields`). Bản nháp cho phép thiếu trường; `submit` mới kiểm tra đủ.
-- **🏠 `PATCH /host/cameras/:id`** — sửa; chỉ chủ sở hữu. Tin `PENDING_REVIEW` không sửa được (`409 INVALID_STATUS_TRANSITION`).
-- **🏠 `GET /host/cameras`** — danh sách của tôi. **🏠 `GET /host/cameras/:id`** — chi tiết `HostCamera`.
-- **🏠 `POST /host/cameras/:id/submit`** — gửi duyệt → `PENDING_REVIEW`. Thiếu trường bắt buộc (ít nhất 1 ảnh, `title`, `model`, `cameraType`, danh mục, hãng, `pricePerDay`, `deposit`, `city`, `district`) thì `400 VALIDATION_ERROR` kèm `fields`. Các trường còn lại là tùy chọn.
-- **🏠 `POST /host/cameras/:id/pause`** và **`/resume`** — tạm ẩn / hiện lại tin `ACTIVE`.
-- **🏠 `DELETE /host/cameras/:id`** → `204`. **Chỉ xóa được tin `DRAFT`**; tin ở trạng thái khác `409 INVALID_STATUS_TRANSITION` (dùng tạm ẩn thay thế).
-
-**Tải ảnh (hai bước):**
-1. **🏠 `POST /host/cameras/:id/images/presign`** — body `{ "contentType": "image/jpeg" }` → `{ "uploadUrl": "https://...", "path": "cameras/cam1/abc.jpg" }`. FE `PUT` file lên `uploadUrl`.
-2. **🏠 `POST /host/cameras/:id/images`** — body `{ "path": "cameras/cam1/abc.jpg", "sortOrder": 0 }` → trả ảnh `{ id, url, sortOrder }`.
-- **🏠 `PATCH /host/cameras/:id/images/order`** — body `{ "imageIds": ["i2", "i1"] }`. **🏠 `DELETE /host/cameras/:id/images/:imageId`** → `204`.
-- Giới hạn: ảnh JPG/PNG/WebP, tối đa 5 MB mỗi ảnh, tối đa 10 ảnh mỗi tin.
-
-**Chặn lịch:**
-- Chống race condition: trong transaction tạo đơn và transaction tạo khoảng chặn, hệ thống khóa dòng máy trước bằng `SELECT id FROM cameras WHERE id = $1 FOR UPDATE`, sau đó mới kiểm tra chéo và insert.
-- **🏠 `POST /host/blocked-dates`** — `{ "cameraId": "cam1", "startDate": "2026-12-10", "endDate": "2026-12-12", "reason": "Đi vắng" }` → `{ id, ... }`. Lỗi: `409 BOOKING_DATE_UNAVAILABLE`.
-- **🏠 `GET /host/blocked-dates?cameraId=&from=&to=`** — các khoảng đã chặn của máy tôi (`cameraId` bắt buộc; `from`/`to` dạng `YYYY-MM-DD` để giới hạn tháng đang xem).
-```json
-{ "items": [ { "id": "bd1", "cameraId": "cam1", "startDate": "2026-12-10", "endDate": "2026-12-12", "reason": "Đi vắng" } ] }
-```
-- **🏠 `DELETE /host/blocked-dates/:id`** → `204`. Chỉ chủ sở hữu máy xóa được.
-
-### 4.7 Admin
-
-- **🛡 `POST /admin/bookings/:id/cancel`** — body `{ "reason": "Lý do hủy đơn" }` (`reason` bắt buộc). Chỉ hủy được đơn ở trạng thái `PENDING` hoặc `OWNER_APPROVED`; ghi `audit_logs` → trả đối tượng đơn mới (`CANCELLED`). Lỗi: `400 VALIDATION_ERROR` (nếu thiếu reason), `409 INVALID_STATUS_TRANSITION` (nếu đơn không ở trạng thái PENDING hoặc OWNER_APPROVED).
-- **🛡 `GET /admin/cameras?status=&page=&pageSize=`** — query `status` nhận bất kỳ giá trị trạng thái tin đăng nào (`DRAFT`, `PENDING_REVIEW`, `ACTIVE`, `PAUSED`, `REJECTED`); bỏ trống thì mặc định `PENDING_REVIEW`; có phân trang `{ items, page, pageSize, total }` trả danh sách `HostCamera` kèm thông tin chủ máy.
-- **🛡 `POST /admin/cameras/:id/approve`** → `ACTIVE`. **🛡 `POST /admin/cameras/:id/reject`** — body `{ "reason": "Ảnh mờ, vui lòng chụp lại" }` (bắt buộc) → `REJECTED`.
-- **🛡 `PATCH /admin/cameras/:id/promotion`** — body `{ "hot": true }` gắn hoặc bỏ nhãn `HOT` → trả `HostCamera`.
-- **🛡 `GET /admin/kyc-submissions?status=PENDING`** → `{ items: [ { id, user: {...}, idFrontUrl, idBackUrl, selfieUrl, status, createdAt } ] }`. Các URL ảnh có thời hạn ngắn, FE không lưu lại.
-- **🛡 `POST /admin/kyc-submissions/:id/approve`**; **`/reject`** với body `{ "reason": "..." }` (bắt buộc).
-
-### 4.8 Chưa có (sẽ bổ sung sau, FE chưa làm)
-
-- Thanh toán, giữ cọc, hoàn cọc, các trạng thái đơn sau `OWNER_APPROVED`.
-- Chat, đánh giá, tranh chấp, thông báo.
-- Số liệu tổng quan chủ máy (doanh thu, tỷ lệ lấp đầy).
-- Đánh giá, giỏ hàng, giảm giá (xem mục 2.5).
+- Không xóa cứng mẫu máy hay chiếc máy đã từng có đơn; chỉ ẩn (`isActive = false`) hoặc `RETIRED`.
+- Admin không tự bỏ quyền `ADMIN` của chính mình được (`400`).
 
 ---
 
-## 5. LUỒNG CHÍNH (để FE hình dung)
+## 4. CÁCH FE LÀM KHI BE CHƯA XONG
 
-**Đặt thuê:**
-1. `/rent` → `GET /cameras` (kèm `from`/`to` nếu đã chọn ngày).
-2. `/camera/[slug]` → `GET /cameras/:slug` + `GET /cameras/:id/availability?month=` cho mỗi tháng đang xem trên lịch.
-3. Người dùng chọn ngày → `POST /bookings/quote` để hiện chi phí.
-4. Bấm "Đặt thuê" → nếu chưa đăng nhập: `/login?next=/checkout?camera=...&from=...&to=...`; nếu đã đăng nhập: `/checkout`.
-5. `/checkout` gọi lại `quote`, bấm gửi → `POST /bookings` → chuyển `/bookings/[id]`.
-6. Chủ máy vào `/host/orders` → mở đơn → duyệt hoặc từ chối.
-7. Người thuê thấy đơn đổi sang `OWNER_APPROVED` hoặc `REJECTED` ở `/bookings`.
+- Dựng mock (MSW hoặc Prism) theo **đúng các ví dụ JSON trong tài liệu này**; khi BE xong chỉ cần tắt mock.
+- BE sẽ giao hợp đồng theo từng gói (xem lộ trình ở `BORROLL_STORE_PLAN.md` mục 12). Thứ tự gợi ý cho FE: trang công khai → đặt thuê và đơn của tôi → trang vận hành → Trợ lý AI.
 
-**Đăng máy:** `/host/listings/new` → tạo `DRAFT` ở bước 1 → tải ảnh (presign → PUT → đăng ký ảnh) → cập nhật các bước sau bằng `PATCH` → `submit` → admin duyệt ở `/admin/listings-review` → tin `ACTIVE` xuất hiện ở `/rent`.
+## 5. QUY TRÌNH ĐỔI API
 
----
+1. Bên muốn đổi ghi vào tài liệu này (hoặc mở Pull Request sửa `openapi.yaml`) và báo bên kia.
+2. Hai bên đồng ý rồi mới làm. BE chỉ **thêm** trường; đổi tên, xóa hoặc đổi ý nghĩa phải báo trước.
+3. Ghi vào "Lịch sử thay đổi".
 
-## 6. CÁCH FE LÀM KHI BE CHƯA XONG
-
-- Dựng mock (MSW hoặc Prism) theo **đúng các ví dụ JSON trong tài liệu này**. Khi BE xong chỉ cần tắt mock.
-- BE sẽ xuất `docs/openapi.yaml`; FE chạy `gen:api` để sinh kiểu TypeScript. Nếu ví dụ trong tài liệu và file OpenAPI khác nhau, **file OpenAPI đúng**, hãy báo BE sửa tài liệu.
-- Thứ tự gợi ý: P1 (đăng ký/đăng nhập, trang chủ, `/rent`, chi tiết máy) → P2 (đặt thuê, đơn, khu vực chủ máy) → P3 (admin, yêu thích, KYC).
-
-## 7. QUY TRÌNH ĐỔI API
-
-1. Bên nào muốn đổi mở một Pull Request sửa `openapi.yaml` (hoặc ghi vào tài liệu này) và gắn thẻ bên kia.
-2. Hai bên đồng ý rồi mới merge. BE chỉ **thêm** trường; đổi tên, xóa trường hoặc đổi ý nghĩa phải báo trước và sửa cùng lúc ở hai phía.
-3. Mọi thay đổi ghi vào mục "Lịch sử thay đổi" ở cuối tài liệu.
-
-## 8. CÂU HỎI CẦN HAI BÊN THỐNG NHẤT
-
-1. Cách tính số ngày thuê (mục 1.3: trả máy không tính ngày kín) có đúng với thực tế cho thuê máy ảnh bạn muốn không? Có cần thuê theo giờ không?
-2. Có cho người thuê bỏ qua đăng nhập khi xem lịch/giá? (hiện tại: có, public).
-3. Khoảng giá trong bộ lọc (dưới 100k, 100k–300k, 300k–600k, từ 600k) có cần chỉnh theo giá thực tế?
-4. Tỉ lệ phí dịch vụ (đang đặt 10% tiền thuê) và chính sách hủy mặc định.
-5. Có hiển thị số điện thoại hai bên sau khi duyệt đơn (đang là có), hay chỉ liên lạc qua chat khi chat hoàn thiện?
-6. Tin đăng có cần admin duyệt trước khi hiển thị? (đang là có; có thể tắt ở giai đoạn đầu cho nhanh).
-
-## 9. LỊCH SỬ THAY ĐỔI
+## 6. LỊCH SỬ THAY ĐỔI
 
 | Ngày | Thay đổi | Người sửa |
 |---|---|---|
-| 2026-11-07 | Bản đầu tiên | BE |
-| 2026-11-08 | Thêm `GET /hosts/:id`, `GET /me/kyc`, `POST /me/avatar/presign` (`avatarUrl` → `avatarPath` khi ghi), `GET /host/blocked-dates`, `DELETE /host/cameras/:id`, `PATCH /admin/cameras/:id/promotion`; thêm tham số `badge`, `excludeId`, `q` không dấu cho `GET /cameras`; bỏ `DISCOUNT`; thêm mục 2.5 (chỗ không có API) | BE |
-| 2026-11-08 | Thống nhất quy tắc: trường bắt buộc khi submit tin (ít nhất 1 ảnh, title, model, cameraType, category, brand, pricePerDay, deposit, city, district); thêm isFavorite vào thẻ máy dùng chung kèm token tùy chọn; sửa completedRentals = 0; khóa SELECT FOR UPDATE chống race condition giữa booking và blocked_dates; GET /admin/cameras nhận query status tùy chọn (mặc định PENDING_REVIEW) kèm phân trang | BE |
-| 2026-11-08 | Thêm endpoint POST /admin/bookings/:id/cancel (body reason bắt buộc, chỉ PENDING/OWNER_APPROVED, ghi audit); làm rõ POST /bookings/:id/cancel chỉ dành cho renter; làm rõ POST /host/cameras BE tự tra categorySlug/brandSlug và trả 400 nếu slug không tồn tại; chốt schema public. | BE |
+| 2026-11-07 | Bản đầu (mô hình nền tảng) | BE |
+| 2026-11-10 | Viết lại hoàn toàn theo mô hình cửa hàng: bỏ chủ máy, duyệt tin, KYC; thêm chi nhánh, mẫu máy/chiếc máy, đơn nhiều món, biên bản giao nhận, sổ thu chi, nhân viên, Trợ lý AI | BE |

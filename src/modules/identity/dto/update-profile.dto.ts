@@ -14,5 +14,15 @@ export class UpdateProfileDto {
     message: 'Số điện thoại không hợp lệ (yêu cầu 10 chữ số bắt đầu bằng 0)',
   })
   phone?: string;
-}
 
+  @ApiPropertyOptional({
+    example: 'avatars/clx123/abc.jpg',
+    nullable: true,
+    description:
+      'Đường dẫn ảnh đại diện nhận từ /me/avatar/presign, hoặc null để xóa ảnh',
+  })
+  @IsOptional()
+  @IsString({ message: 'Đường dẫn ảnh đại diện phải là chuỗi ký tự' })
+  @IsNotEmpty({ message: 'Đường dẫn ảnh đại diện không được để rỗng' })
+  avatarPath?: string | null;
+}

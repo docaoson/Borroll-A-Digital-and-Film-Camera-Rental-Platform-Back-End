@@ -20,10 +20,15 @@ import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { AvatarPresignDto } from './dto/avatar-presign.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { AuthResponse, MeResponse } from './entities/user-response.entity';
+import {
+  AuthResponse,
+  AvatarPresignResponse,
+  MeResponse,
+} from './entities/user-response.entity';
 import { IdentityService } from './identity.service';
 
 @ApiTags('Auth & Identity')
@@ -33,6 +38,12 @@ export class IdentityController {
     private readonly identityService: IdentityService,
     private readonly configService: ConfigService,
   ) {}
+
+  private extractRefreshTokenCookie(req: Request): string | undefined {
+    const cookies = req.cookies as Record<string, unknown> | undefined;
+    const rawToken = cookies?.refreshToken;
+    return typeof rawToken === 'string' ? rawToken : undefined;
+  }
 
   private setRefreshTokenCookie(res: Response, refreshToken: string) {
     const isProduction =
@@ -111,7 +122,7 @@ export class IdentityController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ accessToken: string }> {
-    const rawToken = req.cookies?.refreshToken as string;
+    const rawToken = this.extractRefreshTokenCookie(req);
     const userAgent = req.headers['user-agent'];
     const result = await this.identityService.refresh(rawToken, userAgent);
     this.setRefreshTokenCookie(res, result.refreshToken);
@@ -129,7 +140,7 @@ export class IdentityController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    const rawToken = req.cookies?.refreshToken as string;
+    const rawToken = this.extractRefreshTokenCookie(req);
     await this.identityService.logout(rawToken);
     this.clearRefreshTokenCookie(res);
   }
@@ -154,11 +165,14 @@ export class IdentityController {
   }
 
   @ApiBearerAuth()
-  @Post('me/become-host')
+  @Post('me/avatar/presign')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Bật vai trò chủ máy (HOST)' })
-  @ApiResponse({ status: 200, type: MeResponse })
-  async becomeHost(@CurrentUser('userId') userId: string): Promise<MeResponse> {
-    return this.identityService.becomeHost(userId);
+  @ApiOperation({ summary: 'Xin URL tải ảnh đại diện lên Storage' })
+  @ApiResponse({ status: 200, type: AvatarPresignResponse })
+  async presignAvatar(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: AvatarPresignDto,
+  ): Promise<AvatarPresignResponse> {
+    return this.identityService.presignAvatar(userId, dto);
   }
 }

@@ -14,4 +14,3 @@ import { SupabaseStorageService } from './supabase-storage.service';
   exports: [STORAGE_SERVICE, SupabaseStorageService],
 })
 export class StorageModule {}
-

@@ -36,15 +36,15 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  STORAGE_BUCKET_CAMERA_IMAGES: string = 'camera-images';
-
-  @IsString()
-  @IsOptional()
-  STORAGE_BUCKET_KYC: string = 'kyc-documents';
-
-  @IsString()
-  @IsOptional()
   STORAGE_BUCKET_AVATARS: string = 'avatars';
+
+  @IsString()
+  @IsOptional()
+  STORAGE_BUCKET_RENTAL_IMAGES: string = 'rental-images';
+
+  @IsString()
+  @IsOptional()
+  STORAGE_BUCKET_HANDOVER: string = 'handover-photos';
 
   @IsString()
   JWT_ACCESS_SECRET!: string;
@@ -63,11 +63,23 @@ export class EnvironmentVariables {
 
   @IsNumber()
   @IsOptional()
-  PLATFORM_FEE_PERCENT: number = 10;
+  BOOKING_PENDING_TTL_HOURS: number = 24;
+
+  @IsString()
+  @IsOptional()
+  AI_PROVIDER?: string;
+
+  @IsString()
+  @IsOptional()
+  AI_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  AI_MODEL?: string;
 
   @IsNumber()
   @IsOptional()
-  BOOKING_PENDING_TTL_HOURS: number = 24;
+  AI_DAILY_LIMIT_PER_USER: number = 20;
 }
 
 export function validate(config: Record<string, unknown>) {

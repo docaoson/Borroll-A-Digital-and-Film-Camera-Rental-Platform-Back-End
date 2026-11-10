@@ -3,6 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 
+interface JwtPayload {
+  sub: string;
+  roles: string[];
+  email: string;
+}
+
 @Injectable()
 export class OptionalJwtAuthGuard implements CanActivate {
   constructor(
@@ -21,7 +27,9 @@ export class OptionalJwtAuthGuard implements CanActivate {
 
     try {
       const secret = this.configService.get<string>('JWT_ACCESS_SECRET');
-      const payload = await this.jwtService.verifyAsync(token, { secret });
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+        secret,
+      });
       request.user = {
         userId: payload.sub,
         roles: payload.roles,
@@ -39,4 +47,3 @@ export class OptionalJwtAuthGuard implements CanActivate {
     return type === 'Bearer' ? token : undefined;
   }
 }
-

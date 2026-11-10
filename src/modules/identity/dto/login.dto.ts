@@ -15,4 +15,3 @@ export class LoginDto {
   @IsNotEmpty({ message: 'Mật khẩu không được để trống' })
   password!: string;
 }
-

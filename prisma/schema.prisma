@@ -23,6 +23,7 @@ enum KycStatus {
 enum Role {
   RENTER
   HOST
+  STAFF
   ADMIN
 }
 

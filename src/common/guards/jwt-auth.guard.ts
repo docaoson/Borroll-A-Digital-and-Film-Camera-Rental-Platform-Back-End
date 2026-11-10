@@ -10,6 +10,12 @@ import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
+interface JwtPayload {
+  sub: string;
+  roles: string[];
+  email: string;
+}
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -35,29 +41,34 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException({
         code: 'UNAUTHENTICATED',
         message: 'Bạn chưa đăng nhập hoặc thiếu token xác thực.',
+        details: {},
       });
     }
 
     try {
       const secret = this.configService.get<string>('JWT_ACCESS_SECRET');
-      const payload = await this.jwtService.verifyAsync(token, { secret });
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+        secret,
+      });
       request.user = {
         userId: payload.sub,
         roles: payload.roles,
         email: payload.email,
       };
       return true;
-    } catch (error: any) {
-      if (error?.name === 'TokenExpiredError') {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'TokenExpiredError') {
         throw new UnauthorizedException({
           code: 'TOKEN_EXPIRED',
           message: 'Access token đã hết hạn.',
+          details: {},
         });
       }
 
       throw new UnauthorizedException({
         code: 'UNAUTHENTICATED',
         message: 'Token xác thực không hợp lệ.',
+        details: {},
       });
     }
   }
@@ -67,4 +78,3 @@ export class JwtAuthGuard implements CanActivate {
     return type === 'Bearer' ? token : undefined;
   }
 }
-

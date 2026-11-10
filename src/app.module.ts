@@ -10,6 +10,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { validate } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './infra/database/database.module';
+import { StorageModule } from './infra/storage/storage.module';
 import { IdentityModule } from './modules/identity/identity.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { IdentityModule } from './modules/identity/identity.module';
       },
     ]),
     DatabaseModule,
+    StorageModule,
     HealthModule,
     IdentityModule,
   ],

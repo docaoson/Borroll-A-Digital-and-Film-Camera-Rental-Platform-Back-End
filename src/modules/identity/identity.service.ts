@@ -1,29 +1,63 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import { Role, UserStatus } from '@prisma/client';
+import { JwtService, JwtSignOptions } from '@nestjs/jwt';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../infra/database/prisma.service';
+import {
+  STORAGE_SERVICE,
+  StorageService,
+} from '../../infra/storage/storage.service';
+import { AvatarContentType, AvatarPresignDto } from './dto/avatar-presign.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { MeResponse } from './entities/user-response.entity';
+import {
+  AvatarPresignResponse,
+  MeResponse,
+} from './entities/user-response.entity';
+
+const CONTENT_TYPE_EXTENSIONS: Record<AvatarContentType, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
 
 @Injectable()
-export class IdentityService {
+export class IdentityService implements OnModuleInit {
+  private dummyPasswordHash = '';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    @Inject(STORAGE_SERVICE)
+    private readonly storageService: StorageService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    this.dummyPasswordHash = await argon2.hash(
+      'borroll-dummy-constant-timing-protection',
+    );
+  }
+
+  private async getDummyHash(): Promise<string> {
+    if (!this.dummyPasswordHash) {
+      this.dummyPasswordHash = await argon2.hash(
+        'borroll-dummy-constant-timing-protection',
+      );
+    }
+    return this.dummyPasswordHash;
+  }
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
@@ -33,14 +67,16 @@ export class IdentityService {
     return crypto.randomBytes(40).toString('hex');
   }
 
+  private getAvatarsBucket(): string {
+    return this.configService.get<string>('STORAGE_BUCKET_AVATARS', 'avatars');
+  }
+
   private constructAvatarUrl(avatarPath: string | null): string | null {
     if (!avatarPath) return null;
-    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const bucket = this.configService.get<string>(
-      'STORAGE_BUCKET_AVATARS',
-      'avatars',
+    return this.storageService.getPublicUrl(
+      this.getAvatarsBucket(),
+      avatarPath,
     );
-    return `${supabaseUrl}/storage/v1/object/public/${bucket}/${avatarPath}`;
   }
 
   private async generateAccessToken(
@@ -49,10 +85,13 @@ export class IdentityService {
     email: string,
   ): Promise<string> {
     const secret = this.configService.get<string>('JWT_ACCESS_SECRET');
-    const expiresIn = this.configService.get<string>('JWT_ACCESS_TTL', '15m');
+    const expiresIn = this.configService.get<string>(
+      'JWT_ACCESS_TTL',
+      '15m',
+    ) as JwtSignOptions['expiresIn'];
     return this.jwtService.signAsync(
       { sub: userId, roles, email },
-      { secret, expiresIn: expiresIn as any },
+      { secret, expiresIn },
     );
   }
 
@@ -82,19 +121,11 @@ export class IdentityService {
 
   async register(dto: RegisterDto, userAgent?: string) {
     const email = dto.email.trim().toLowerCase();
-    const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      throw new ConflictException({
-        code: 'EMAIL_ALREADY_USED',
-        message: 'Email này đã được sử dụng.',
-        details: { fields: { email: 'Email này đã được đăng ký tài khoản' } },
-      });
-    }
-
     const passwordHash = await argon2.hash(dto.password);
 
-    const user = await this.prisma.$transaction(async (tx) => {
-      const createdUser = await tx.user.create({
+    let user;
+    try {
+      user = await this.prisma.user.create({
         data: {
           fullName: dto.fullName.trim(),
           email,
@@ -111,9 +142,19 @@ export class IdentityService {
           roles: true,
         },
       });
-
-      return createdUser;
-    });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          code: 'EMAIL_ALREADY_USED',
+          message: 'Email này đã được sử dụng.',
+          details: { fields: { email: 'Email này đã được đăng ký tài khoản' } },
+        });
+      }
+      throw error;
+    }
 
     const roles = user.roles.map((r) => r.role);
     const accessToken = await this.generateAccessToken(
@@ -147,7 +188,10 @@ export class IdentityService {
       include: { roles: true },
     });
 
-    if (!user) {
+    const hashToVerify = user ? user.passwordHash : await this.getDummyHash();
+    const isMatch = await argon2.verify(hashToVerify, dto.password);
+
+    if (!user || !isMatch) {
       throw new UnauthorizedException({
         code: 'INVALID_CREDENTIALS',
         message: 'Email hoặc mật khẩu không đúng.',
@@ -159,15 +203,6 @@ export class IdentityService {
       throw new ForbiddenException({
         code: 'ACCOUNT_SUSPENDED',
         message: 'Tài khoản của bạn đã bị tạm khóa.',
-        details: {},
-      });
-    }
-
-    const isMatch = await argon2.verify(user.passwordHash, dto.password);
-    if (!isMatch) {
-      throw new UnauthorizedException({
-        code: 'INVALID_CREDENTIALS',
-        message: 'Email hoặc mật khẩu không đúng.',
         details: {},
       });
     }
@@ -197,7 +232,7 @@ export class IdentityService {
     };
   }
 
-  async refresh(rawToken: string, userAgent?: string) {
+  async refresh(rawToken?: string, userAgent?: string) {
     if (!rawToken) {
       throw new UnauthorizedException({
         code: 'UNAUTHENTICATED',
@@ -219,10 +254,10 @@ export class IdentityService {
       });
     }
 
-    // Reuse detection
+    // Reuse detection: if already revoked, revoke entire token family
     if (tokenRecord.revokedAt !== null) {
       await this.prisma.refreshToken.updateMany({
-        where: { familyId: tokenRecord.familyId },
+        where: { familyId: tokenRecord.familyId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
 
@@ -241,11 +276,19 @@ export class IdentityService {
       });
     }
 
-    // Rotate token
-    await this.prisma.refreshToken.update({
-      where: { id: tokenRecord.id },
+    // Atomic token rotation to handle concurrent refresh requests safely
+    const rotated = await this.prisma.refreshToken.updateMany({
+      where: { id: tokenRecord.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+
+    if (rotated.count === 0) {
+      throw new UnauthorizedException({
+        code: 'UNAUTHENTICATED',
+        message: 'Refresh token đã được sử dụng.',
+        details: {},
+      });
+    }
 
     const user = await this.prisma.user.findUnique({
       where: { id: tokenRecord.userId },
@@ -308,7 +351,6 @@ export class IdentityService {
       phone: user.phone,
       avatarUrl: this.constructAvatarUrl(user.avatarPath),
       roles: user.roles.map((r) => r.role),
-      kycStatus: user.kycStatus,
     };
   }
 
@@ -322,9 +364,30 @@ export class IdentityService {
       });
     }
 
-    const data: { fullName?: string; phone?: string } = {};
+    const data: {
+      fullName?: string;
+      phone?: string;
+      avatarPath?: string | null;
+    } = {};
     if (dto.fullName !== undefined) data.fullName = dto.fullName.trim();
     if (dto.phone !== undefined) data.phone = dto.phone.trim();
+
+    if (dto.avatarPath !== undefined) {
+      const bucket = this.getAvatarsBucket();
+      if (dto.avatarPath === null) {
+        if (user.avatarPath) {
+          await this.storageService.remove(bucket, user.avatarPath);
+        }
+        data.avatarPath = null;
+      } else {
+        await this.storageService.assertOwnedFile(
+          bucket,
+          dto.avatarPath,
+          `avatars/${userId}/`,
+        );
+        data.avatarPath = dto.avatarPath;
+      }
+    }
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -334,47 +397,12 @@ export class IdentityService {
     return this.getMe(userId);
   }
 
-  async becomeHost(userId: string): Promise<MeResponse> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { roles: true },
-    });
-
-    if (!user) {
-      throw new NotFoundException({
-        code: 'NOT_FOUND',
-        message: 'Không tìm thấy người dùng.',
-        details: {},
-      });
-    }
-
-    const fields: Record<string, string> = {};
-    if (!user.fullName || user.fullName.trim() === '') {
-      fields.fullName = 'Cần cập nhật họ và tên trước khi trở thành chủ máy';
-    }
-    if (!user.phone || user.phone.trim() === '') {
-      fields.phone = 'Cần cập nhật số điện thoại trước khi trở thành chủ máy';
-    }
-
-    if (Object.keys(fields).length > 0) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message:
-          'Vui lòng hoàn thiện họ tên và số điện thoại trước khi trở thành chủ máy.',
-        details: { fields },
-      });
-    }
-
-    const hasHostRole = user.roles.some((r) => r.role === Role.HOST);
-    if (!hasHostRole) {
-      await this.prisma.userRole.create({
-        data: {
-          userId,
-          role: Role.HOST,
-        },
-      });
-    }
-
-    return this.getMe(userId);
+  async presignAvatar(
+    userId: string,
+    dto: AvatarPresignDto,
+  ): Promise<AvatarPresignResponse> {
+    const ext = CONTENT_TYPE_EXTENSIONS[dto.contentType];
+    const path = `avatars/${userId}/${crypto.randomUUID()}.${ext}`;
+    return this.storageService.createUploadUrl(this.getAvatarsBucket(), path);
   }
 }
