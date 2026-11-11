@@ -33,6 +33,63 @@ enum KycSubmissionStatus {
   REJECTED
 }
 
+enum ModelKind {
+  CAMERA
+  LENS
+  ACCESSORY
+}
+
+enum CameraType {
+  DIGITAL
+  FILM
+  INSTANT
+}
+
+enum ImageKind {
+  PRODUCT
+  SAMPLE
+}
+
+enum UnitCondition {
+  EXCELLENT
+  GOOD
+  FAIR
+}
+
+enum UnitStatus {
+  AVAILABLE
+  MAINTENANCE
+  RETIRED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  PICKED_UP
+  RETURNED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum HandoverKind {
+  PICKUP
+  RETURN
+}
+
+enum PaymentType {
+  DEPOSIT_RECEIVED
+  RENTAL_RECEIVED
+  DEPOSIT_REFUNDED
+  DAMAGE_CHARGE
+  LATE_FEE
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -48,6 +105,8 @@ model User {
   roles          UserRole[]
   refreshTokens  RefreshToken[]
   kycSubmissions KycSubmission[]
+  favorites      Favorite[]
+  bookings       Booking[]
 
   @@map("users")
 }
@@ -113,4 +172,312 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([actorId])
   @@map("audit_logs")
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  address   String
+  phone     String
+  openHours String   @map("open_hours")
+  mapUrl    String?  @map("map_url")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  units    RentalUnit[]
+  bookings Booking[]
+
+  @@map("branches")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  parentId  String?  @map("parent_id")
+  name      String
+  slug      String   @unique
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent   Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[]    @relation("CategoryTree")
+  models   RentalModel[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  models RentalModel[]
+
+  @@map("brands")
+}
+
+model RentalModel {
+  id              String      @id @default(cuid())
+  kind            ModelKind
+  categoryId      String      @map("category_id")
+  brandId         String      @map("brand_id")
+  slug            String      @unique
+  name            String
+  description     String
+  cameraType      CameraType? @map("camera_type")
+  mount           String?
+  filmFormat      String?     @map("film_format")
+  pricePerDay     Int         @map("price_per_day")
+  pricePerWeek    Int?        @map("price_per_week")
+  deposit         Int
+  isActive        Boolean     @default(true) @map("is_active")
+  isFeatured      Boolean     @default(false) @map("is_featured")
+  lastInspectedAt DateTime?   @map("last_inspected_at")
+  inspectionNotes Json?       @map("inspection_notes")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  category     Category           @relation(fields: [categoryId], references: [id])
+  brand        Brand              @relation(fields: [brandId], references: [id])
+  images       RentalModelImage[]
+  specs        RentalModelSpecs?
+  units        RentalUnit[]
+  favorites    Favorite[]
+  bookingUnits BookingUnit[]
+
+  @@index([isActive, categoryId])
+  @@index([brandId])
+  @@index([pricePerDay])
+  @@map("rental_models")
+}
+
+model RentalModelImage {
+  id         String    @id @default(cuid())
+  modelId    String    @map("model_id")
+  path       String
+  kind       ImageKind @default(PRODUCT)
+  caption    String?
+  sampleLens String?   @map("sample_lens")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  model RentalModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, sortOrder])
+  @@map("rental_model_images")
+}
+
+model RentalModelSpecs {
+  modelId   String   @id @map("model_id")
+  specs     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  model RentalModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@map("rental_model_specs")
+}
+
+model FilmProduct {
+  id        String   @id @default(cuid())
+  name      String
+  iso       Int
+  format    String
+  price     Int
+  inStock   Boolean  @default(true) @map("in_stock")
+  imagePath String?  @map("image_path")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bookingAddons BookingAddon[]
+
+  @@map("film_products")
+}
+
+model Favorite {
+  userId    String   @map("user_id")
+  modelId   String   @map("model_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model RentalModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@id([userId, modelId])
+  @@map("favorites")
+}
+
+model RentalUnit {
+  id           String        @id @default(cuid())
+  modelId      String        @map("model_id")
+  branchId     String        @map("branch_id")
+  serialNumber String        @unique @map("serial_number")
+  condition    UnitCondition @default(EXCELLENT)
+  status       UnitStatus    @default(AVAILABLE)
+  notes        String?
+  purchasedAt  DateTime?     @map("purchased_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  model        RentalModel   @relation(fields: [modelId], references: [id])
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  blocks       UnitBlock[]
+  bookingUnits BookingUnit[]
+
+  @@index([modelId, branchId, status])
+  @@map("rental_units")
+}
+
+model UnitBlock {
+  id        String                      @id @default(cuid())
+  unitId    String                      @map("unit_id")
+  startDate DateTime                    @map("start_date") @db.Date
+  endDate   DateTime                    @map("end_date") @db.Date
+  reason    String
+  createdBy String                      @map("created_by")
+  during    Unsupported("daterange")?
+  createdAt DateTime                    @default(now()) @map("created_at")
+  updatedAt DateTime                    @updatedAt @map("updated_at")
+
+  unit RentalUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([unitId])
+  @@map("unit_blocks")
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  code            String        @unique
+  userId          String        @map("user_id")
+  branchId        String        @map("branch_id")
+  startDate       DateTime      @map("start_date") @db.Date
+  endDate         DateTime      @map("end_date") @db.Date
+  days            Int
+  status          BookingStatus @default(PENDING)
+  contactName     String        @map("contact_name")
+  contactPhone    String        @map("contact_phone")
+  note            String?
+  rentalAmount    Int           @map("rental_amount")
+  addonsAmount    Int           @map("addons_amount")
+  depositAmount   Int           @map("deposit_amount")
+  totalAmount     Int           @map("total_amount")
+  expiresAt       DateTime      @map("expires_at")
+  confirmedBy     String?       @map("confirmed_by")
+  confirmedAt     DateTime?     @map("confirmed_at")
+  pickedUpAt      DateTime?     @map("picked_up_at")
+  returnedAt      DateTime?     @map("returned_at")
+  completedAt     DateTime?     @map("completed_at")
+  rejectedReason  String?       @map("rejected_reason")
+  cancelledReason String?       @map("cancelled_reason")
+  setupPlanId     String?       @map("setup_plan_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user       User               @relation(fields: [userId], references: [id])
+  branch     Branch             @relation(fields: [branchId], references: [id])
+  units      BookingUnit[]
+  addons     BookingAddon[]
+  statusLogs BookingStatusLog[]
+  handovers  HandoverRecord[]
+  payments   PaymentRecord[]
+
+  @@index([userId, status])
+  @@index([branchId, status, startDate])
+  @@map("bookings")
+}
+
+model BookingUnit {
+  id            String                    @id @default(cuid())
+  bookingId     String                    @map("booking_id")
+  unitId        String                    @map("unit_id")
+  modelId       String                    @map("model_id")
+  active        Boolean                   @default(true)
+  startDate     DateTime                  @map("start_date") @db.Date
+  endDate       DateTime                  @map("end_date") @db.Date
+  pricePerDay   Int                       @map("price_per_day")
+  rentalAmount  Int                       @map("rental_amount")
+  depositAmount Int                       @map("deposit_amount")
+  during        Unsupported("daterange")?
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+
+  booking Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  unit    RentalUnit  @relation(fields: [unitId], references: [id])
+  model   RentalModel @relation(fields: [modelId], references: [id])
+
+  @@index([bookingId])
+  @@index([unitId])
+  @@map("booking_units")
+}
+
+model BookingAddon {
+  bookingId     String   @map("booking_id")
+  filmProductId String   @map("film_product_id")
+  quantity      Int
+  unitPrice     Int      @map("unit_price")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  booking     Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  filmProduct FilmProduct @relation(fields: [filmProductId], references: [id])
+
+  @@id([bookingId, filmProductId])
+  @@map("booking_addons")
+}
+
+model BookingStatusLog {
+  id         String         @id @default(cuid())
+  bookingId  String         @map("booking_id")
+  fromStatus BookingStatus? @map("from_status")
+  toStatus   BookingStatus  @map("to_status")
+  actorId    String?        @map("actor_id")
+  note       String?
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("booking_status_logs")
+}
+
+model HandoverRecord {
+  id             String       @id @default(cuid())
+  bookingId      String       @map("booking_id")
+  kind           HandoverKind
+  checklist      Json
+  conditionNotes String?      @map("condition_notes")
+  photoPaths     String[]     @map("photo_paths")
+  idChecked      Boolean      @default(false) @map("id_checked")
+  recordedBy     String       @map("recorded_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("handover_records")
+}
+
+model PaymentRecord {
+  id         String        @id @default(cuid())
+  bookingId  String        @map("booking_id")
+  type       PaymentType
+  amount     Int
+  method     PaymentMethod
+  note       String?
+  recordedBy String        @map("recorded_by")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("payment_records")
 }

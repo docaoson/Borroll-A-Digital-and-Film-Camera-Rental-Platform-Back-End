@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -12,6 +13,7 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
+import { writeAuditLog } from '../../common/utils/audit.util';
 import { PrismaService } from '../../infra/database/prisma.service';
 import {
   STORAGE_SERVICE,
@@ -404,5 +406,135 @@ export class IdentityService implements OnModuleInit {
     const ext = CONTENT_TYPE_EXTENSIONS[dto.contentType];
     const path = `avatars/${userId}/${crypto.randomUUID()}.${ext}`;
     return this.storageService.createUploadUrl(this.getAvatarsBucket(), path);
+  }
+
+  async listUsersForAdmin(params: {
+    q?: string;
+    role?: Role;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? 20;
+
+    const where: Prisma.UserWhereInput = {};
+    if (params.q?.trim()) {
+      const q = params.q.trim();
+      where.OR = [
+        { fullName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    if (params.role) {
+      where.roles = { some: { role: params.role } };
+    }
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: { roles: true },
+        orderBy: [{ createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      items: users.map((u) => ({
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        phone: u.phone,
+        status: u.status,
+        roles: u.roles.map((r) => r.role),
+        createdAt: u.createdAt.toISOString(),
+      })),
+      page,
+      pageSize,
+      total,
+    };
+  }
+
+  async updateUserAccessForAdmin(params: {
+    targetUserId: string;
+    actorId: string;
+    roles?: Role[];
+    status?: UserStatus;
+  }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: params.targetUserId },
+      include: { roles: true },
+    });
+    if (!user) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Không tìm thấy người dùng.',
+        details: {},
+      });
+    }
+
+    if (
+      params.targetUserId === params.actorId &&
+      params.roles !== undefined &&
+      !params.roles.includes(Role.ADMIN)
+    ) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Admin không thể tự gỡ quyền ADMIN của chính mình.',
+        details: {
+          fields: { roles: 'Không thể tự bỏ quyền ADMIN của chính mình' },
+        },
+      });
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (params.status !== undefined) {
+        await tx.user.update({
+          where: { id: params.targetUserId },
+          data: { status: params.status },
+        });
+      }
+
+      if (params.roles !== undefined) {
+        const uniqueRoles = Array.from(new Set(params.roles));
+        await tx.userRole.deleteMany({
+          where: { userId: params.targetUserId },
+        });
+        await tx.userRole.createMany({
+          data: uniqueRoles.map((role) => ({
+            userId: params.targetUserId,
+            role,
+          })),
+        });
+      }
+
+      await writeAuditLog(tx, {
+        actorId: params.actorId,
+        action: 'USER_ACCESS_UPDATED',
+        targetType: 'USER',
+        targetId: params.targetUserId,
+        metadata: {
+          roles: params.roles ?? user.roles.map((r) => r.role),
+          status: params.status ?? user.status,
+        },
+      });
+
+      return tx.user.findUniqueOrThrow({
+        where: { id: params.targetUserId },
+        include: { roles: true },
+      });
+    });
+
+    return {
+      id: updated.id,
+      fullName: updated.fullName,
+      email: updated.email,
+      phone: updated.phone,
+      status: updated.status,
+      roles: updated.roles.map((r) => r.role),
+      createdAt: updated.createdAt.toISOString(),
+    };
   }
 }

@@ -11,7 +11,13 @@ import { validate } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './infra/database/database.module';
 import { StorageModule } from './infra/storage/storage.module';
+import { ExpirePendingBookingsJob } from './jobs/expire-pending-bookings.job';
+import { AdminModule } from './modules/admin';
+import { BookingModule } from './modules/booking';
+import { CatalogModule } from './modules/catalog';
 import { IdentityModule } from './modules/identity/identity.module';
+import { InventoryModule } from './modules/inventory';
+import { OperationsModule } from './modules/operations';
 
 @Module({
   imports: [
@@ -34,8 +40,14 @@ import { IdentityModule } from './modules/identity/identity.module';
     StorageModule,
     HealthModule,
     IdentityModule,
+    InventoryModule,
+    CatalogModule,
+    BookingModule,
+    OperationsModule,
+    AdminModule,
   ],
   providers: [
+    ExpirePendingBookingsJob,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
