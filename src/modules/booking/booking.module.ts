@@ -12,4 +12,3 @@ import { PricingService } from './pricing.service';
   exports: [BookingService, PricingService],
 })
 export class BookingModule {}
-

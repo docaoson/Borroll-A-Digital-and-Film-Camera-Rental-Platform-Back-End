@@ -10,4 +10,3 @@ import { OperationsService } from './operations.service';
   exports: [OperationsService],
 })
 export class OperationsModule {}
-

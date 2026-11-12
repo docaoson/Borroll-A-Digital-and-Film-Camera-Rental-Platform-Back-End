@@ -268,19 +268,23 @@ export class BookingService {
       );
     }
 
-    const unavailableModelIds: string[] = [];
-    for (const [modelId, neededCount] of requestedCounts.entries()) {
-      const availableCount =
-        await this.inventoryService.countAvailableUnitsForModel({
-          modelId,
-          branchId: calculated.branch.id,
-          startDate: dto.startDate,
-          endDate: dto.endDate,
-        });
-      if (availableCount < neededCount) {
-        unavailableModelIds.push(modelId);
-      }
-    }
+    const availabilityResults = await Promise.all(
+      Array.from(requestedCounts.entries()).map(
+        async ([modelId, neededCount]) => {
+          const availableCount =
+            await this.inventoryService.countAvailableUnitsForModel({
+              modelId,
+              branchId: calculated.branch.id,
+              startDate: dto.startDate,
+              endDate: dto.endDate,
+            });
+          return { modelId, available: availableCount >= neededCount };
+        },
+      ),
+    );
+    const unavailableModelIds = availabilityResults
+      .filter((r) => !r.available)
+      .map((r) => r.modelId);
 
     return {
       days: calculated.days,
@@ -316,9 +320,15 @@ export class BookingService {
     let createdBooking: BookingWithDetail;
     try {
       createdBooking = await this.prisma.$transaction(async (tx) => {
-        // Lock model rows in deterministic ascending order to prevent deadlocks
-        for (const modelId of uniqueModelIdsSorted) {
-          await tx.$executeRaw`SELECT id FROM rental_models WHERE id = ${modelId} FOR UPDATE`;
+        // Lock model rows in deterministic ascending order in a single query to prevent deadlocks
+        if (uniqueModelIdsSorted.length > 0) {
+          await tx.$queryRaw`
+            SELECT id
+            FROM rental_models
+            WHERE id IN (${Prisma.join(uniqueModelIdsSorted)})
+            ORDER BY id ASC
+            FOR UPDATE
+          `;
         }
 
         const assignedUnitIds: string[] = [];
@@ -561,6 +571,8 @@ export class BookingService {
         expiresAt: { lt: now },
       },
       select: { id: true },
+      orderBy: { expiresAt: 'asc' },
+      take: 100,
     });
 
     if (expiredBookings.length === 0) {

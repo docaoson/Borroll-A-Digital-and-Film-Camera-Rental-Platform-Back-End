@@ -230,9 +230,14 @@ export class CatalogService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
-    const allCategories = await this.prisma.category.findMany({
-      select: { id: true, slug: true, name: true, parentId: true },
-    });
+    const [allCategories, qMatchedIds] = await Promise.all([
+      this.prisma.category.findMany({
+        select: { id: true, slug: true, name: true, parentId: true },
+      }),
+      query.q?.trim()
+        ? this.findMatchingModelIdsByQuery(query.q)
+        : Promise.resolve<string[] | null>(null),
+    ]);
     const categoryById = new Map(allCategories.map((c) => [c.id, c]));
 
     const requestedCategorySlugs = (query.category ?? '')
@@ -248,11 +253,6 @@ export class CatalogService {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-
-    let qMatchedIds: string[] | null = null;
-    if (query.q?.trim()) {
-      qMatchedIds = await this.findMatchingModelIdsByQuery(query.q);
-    }
 
     const hasDateRange = Boolean(query.from && query.to);
     const activeBranchFilter = query.branch?.trim() || undefined;
@@ -1031,12 +1031,14 @@ export class CatalogService {
     actorId: string,
   ) {
     await this.prisma.$transaction(async (tx) => {
-      for (let i = 0; i < dto.imageIds.length; i++) {
-        await tx.rentalModelImage.updateMany({
-          where: { id: dto.imageIds[i], modelId },
-          data: { sortOrder: i },
-        });
-      }
+      await Promise.all(
+        dto.imageIds.map((imageId, i) =>
+          tx.rentalModelImage.updateMany({
+            where: { id: imageId, modelId },
+            data: { sortOrder: i },
+          }),
+        ),
+      );
       await writeAuditLog(tx, {
         actorId,
         action: 'MODEL_IMAGES_REORDERED',

@@ -620,4 +620,3 @@ export class UpdateFilmProductDto {
   @IsBoolean()
   inStock?: boolean;
 }
-

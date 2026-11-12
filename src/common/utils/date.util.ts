@@ -80,4 +80,3 @@ export function getMonthRange(monthStr: string): {
 
   return { startDate, endExclusiveDate, daysInMonth, year, month };
 }
-

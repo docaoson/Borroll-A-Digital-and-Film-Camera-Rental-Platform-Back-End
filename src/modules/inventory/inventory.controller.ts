@@ -109,4 +109,3 @@ export class InventoryController {
     return this.inventoryService.deleteAdminUnit(id, actorId);
   }
 }
-

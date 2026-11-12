@@ -117,4 +117,3 @@ export class CancelBookingDto {
   @IsString()
   reason?: string;
 }
-

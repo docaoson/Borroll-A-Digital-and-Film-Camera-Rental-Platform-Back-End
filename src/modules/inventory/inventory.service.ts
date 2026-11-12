@@ -623,4 +623,3 @@ export class InventoryService {
     return { id, deleted: true };
   }
 }
-

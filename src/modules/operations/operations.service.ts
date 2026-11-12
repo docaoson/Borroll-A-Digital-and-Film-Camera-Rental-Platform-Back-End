@@ -402,8 +402,12 @@ export class OperationsService {
 
     const bucket = this.getHandoverBucket();
     const expectedPrefix = `handover/${bookingId}/`;
-    for (const path of dto.photoPaths) {
-      await this.storageService.assertOwnedFile(bucket, path, expectedPrefix);
+    if (dto.photoPaths.length > 0) {
+      await Promise.all(
+        dto.photoPaths.map((path) =>
+          this.storageService.assertOwnedFile(bucket, path, expectedPrefix),
+        ),
+      );
     }
 
     const depositReceived = dto.payments
@@ -513,8 +517,12 @@ export class OperationsService {
 
     const bucket = this.getHandoverBucket();
     const expectedPrefix = `handover/${bookingId}/`;
-    for (const path of dto.photoPaths) {
-      await this.storageService.assertOwnedFile(bucket, path, expectedPrefix);
+    if (dto.photoPaths.length > 0) {
+      await Promise.all(
+        dto.photoPaths.map((path) =>
+          this.storageService.assertOwnedFile(bucket, path, expectedPrefix),
+        ),
+      );
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {

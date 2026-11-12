@@ -126,4 +126,3 @@ export class OperationsController {
     return this.operationsService.completeBooking(id, dto, actorId, roles);
   }
 }
-

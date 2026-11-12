@@ -11,4 +11,3 @@ export class ExpirePendingBookingsJob {
     await this.bookingService.expirePendingBookings();
   }
 }
-

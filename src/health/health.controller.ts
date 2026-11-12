@@ -38,6 +38,7 @@ export class HealthController {
     return {
       status: database === 'up' ? 'ok' : 'degraded',
       database,
+      supabaseProject: this.prisma.supabaseProjectRef,
     };
   }
 }

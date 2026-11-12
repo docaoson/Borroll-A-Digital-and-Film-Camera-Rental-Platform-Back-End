@@ -39,15 +39,43 @@ export class IdentityController {
     private readonly configService: ConfigService,
   ) {}
 
-  private extractRefreshTokenCookie(req: Request): string | undefined {
+  private extractRefreshTokenCookies(req: Request): string[] {
+    const tokens: string[] = [];
+    const headerCookie = req.headers.cookie;
+    if (typeof headerCookie === 'string' && headerCookie.length > 0) {
+      for (const pair of headerCookie.split(';')) {
+        const eqIdx = pair.indexOf('=');
+        if (eqIdx <= 0) continue;
+        const name = pair.slice(0, eqIdx).trim();
+        if (name === 'refreshToken') {
+          const val = decodeURIComponent(pair.slice(eqIdx + 1).trim());
+          if (val) tokens.push(val);
+        }
+      }
+    }
+
     const cookies = req.cookies as Record<string, unknown> | undefined;
-    const rawToken = cookies?.refreshToken;
-    return typeof rawToken === 'string' ? rawToken : undefined;
+    const parsedToken = cookies?.refreshToken;
+    if (typeof parsedToken === 'string' && parsedToken.length > 0) {
+      tokens.push(parsedToken);
+    }
+
+    return Array.from(new Set(tokens));
+  }
+
+  private setNoCacheHeaders(res: Response) {
+    res.setHeader(
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate, private',
+    );
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
   }
 
   private setRefreshTokenCookie(res: Response, refreshToken: string) {
     const isProduction =
       this.configService.get<string>('NODE_ENV') === 'production';
+    this.setNoCacheHeaders(res);
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: isProduction,
@@ -60,6 +88,7 @@ export class IdentityController {
   private clearRefreshTokenCookie(res: Response) {
     const isProduction =
       this.configService.get<string>('NODE_ENV') === 'production';
+    this.setNoCacheHeaders(res);
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: isProduction,
@@ -78,8 +107,12 @@ export class IdentityController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
+    const previousTokens = this.extractRefreshTokenCookies(req);
     const userAgent = req.headers['user-agent'];
     const result = await this.identityService.register(dto, userAgent);
+    if (previousTokens.length > 0) {
+      await this.identityService.logout(previousTokens);
+    }
     this.setRefreshTokenCookie(res, result.refreshToken);
     return {
       accessToken: result.accessToken,
@@ -98,8 +131,12 @@ export class IdentityController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
+    const previousTokens = this.extractRefreshTokenCookies(req);
     const userAgent = req.headers['user-agent'];
     const result = await this.identityService.login(dto, userAgent);
+    if (previousTokens.length > 0) {
+      await this.identityService.logout(previousTokens);
+    }
     this.setRefreshTokenCookie(res, result.refreshToken);
     return {
       accessToken: result.accessToken,
@@ -122,9 +159,9 @@ export class IdentityController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ accessToken: string }> {
-    const rawToken = this.extractRefreshTokenCookie(req);
+    const rawTokens = this.extractRefreshTokenCookies(req);
     const userAgent = req.headers['user-agent'];
-    const result = await this.identityService.refresh(rawToken, userAgent);
+    const result = await this.identityService.refresh(rawTokens, userAgent);
     this.setRefreshTokenCookie(res, result.refreshToken);
     return {
       accessToken: result.accessToken,
@@ -140,8 +177,8 @@ export class IdentityController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    const rawToken = this.extractRefreshTokenCookie(req);
-    await this.identityService.logout(rawToken);
+    const rawTokens = this.extractRefreshTokenCookies(req);
+    await this.identityService.logout(rawTokens);
     this.clearRefreshTokenCookie(res);
   }
 
@@ -149,7 +186,11 @@ export class IdentityController {
   @Get('me')
   @ApiOperation({ summary: 'Lấy thông tin cá nhân hiện tại' })
   @ApiResponse({ status: 200, type: MeResponse })
-  async getMe(@CurrentUser('userId') userId: string): Promise<MeResponse> {
+  async getMe(
+    @CurrentUser('userId') userId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<MeResponse> {
+    this.setNoCacheHeaders(res);
     return this.identityService.getMe(userId);
   }
 
@@ -160,7 +201,9 @@ export class IdentityController {
   async updateMe(
     @CurrentUser('userId') userId: string,
     @Body() dto: UpdateProfileDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<MeResponse> {
+    this.setNoCacheHeaders(res);
     return this.identityService.updateMe(userId, dto);
   }
 

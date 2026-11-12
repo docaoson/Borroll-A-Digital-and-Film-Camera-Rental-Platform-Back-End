@@ -7,7 +7,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
-import { validate } from './config/env.validation';
+import { BACKEND_ENV_FILE_PATH, validate } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { DatabaseModule } from './infra/database/database.module';
 import { StorageModule } from './infra/storage/storage.module';
@@ -23,6 +23,7 @@ import { OperationsModule } from './modules/operations';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: [BACKEND_ENV_FILE_PATH, '.env'],
       validate,
     }),
     JwtModule.register({

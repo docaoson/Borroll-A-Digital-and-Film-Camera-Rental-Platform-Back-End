@@ -20,13 +20,21 @@ import {
   StorageService,
 } from '../../infra/storage/storage.service';
 import { AvatarContentType, AvatarPresignDto } from './dto/avatar-presign.dto';
-import { LoginDto } from './dto/login.dto';
+import {
+  LoginDto,
+  sanitizeEmailInput,
+  sanitizePasswordInput,
+} from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import {
   AvatarPresignResponse,
   MeResponse,
 } from './entities/user-response.entity';
+import {
+  generateVietnameseImeCandidates,
+  normalizeEmailWithTelex,
+} from './utils/telex.util';
 
 const CONTENT_TYPE_EXTENSIONS: Record<AvatarContentType, string> = {
   'image/jpeg': 'jpg',
@@ -122,14 +130,15 @@ export class IdentityService implements OnModuleInit {
   }
 
   async register(dto: RegisterDto, userAgent?: string) {
-    const email = dto.email.trim().toLowerCase();
-    const passwordHash = await argon2.hash(dto.password);
+    const email = String(sanitizeEmailInput(dto.email));
+    const normalizedPassword = String(sanitizePasswordInput(dto.password));
+    const passwordHash = await argon2.hash(normalizedPassword);
 
     let user;
     try {
       user = await this.prisma.user.create({
         data: {
-          fullName: dto.fullName.trim(),
+          fullName: dto.fullName.normalize('NFC').trim(),
           email,
           phone: dto.phone.trim(),
           passwordHash,
@@ -184,14 +193,43 @@ export class IdentityService implements OnModuleInit {
   }
 
   async login(dto: LoginDto, userAgent?: string) {
-    const email = dto.email.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({
+    const email = normalizeEmailWithTelex(
+      String(sanitizeEmailInput(dto.email)),
+    );
+    const normalizedPassword = String(sanitizePasswordInput(dto.password));
+    let user = await this.prisma.user.findUnique({
       where: { email },
       include: { roles: true },
     });
 
+    if (!user) {
+      const emailCandidates = generateVietnameseImeCandidates(email)
+        .map((c) => c.toLowerCase())
+        .filter((c) => c !== email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c));
+      for (const candidateEmail of emailCandidates) {
+        user = await this.prisma.user.findUnique({
+          where: { email: candidateEmail },
+          include: { roles: true },
+        });
+        if (user) break;
+      }
+    }
+
     const hashToVerify = user ? user.passwordHash : await this.getDummyHash();
-    const isMatch = await argon2.verify(hashToVerify, dto.password);
+    let isMatch = await argon2.verify(hashToVerify, normalizedPassword);
+
+    if (!isMatch && user) {
+      const fallbackCandidates = generateVietnameseImeCandidates(
+        dto.password,
+      ).filter((candidate) => candidate !== normalizedPassword);
+
+      for (const candidate of fallbackCandidates) {
+        if (await argon2.verify(user.passwordHash, candidate)) {
+          isMatch = true;
+          break;
+        }
+      }
+    }
 
     if (!user || !isMatch) {
       throw new UnauthorizedException({
@@ -234,8 +272,16 @@ export class IdentityService implements OnModuleInit {
     };
   }
 
-  async refresh(rawToken?: string, userAgent?: string) {
-    if (!rawToken) {
+  async refresh(rawTokenInput?: string | string[], userAgent?: string) {
+    const rawTokens = (
+      Array.isArray(rawTokenInput)
+        ? rawTokenInput
+        : rawTokenInput
+          ? [rawTokenInput]
+          : []
+    ).filter((t): t is string => typeof t === 'string' && t.length > 0);
+
+    if (rawTokens.length === 0) {
       throw new UnauthorizedException({
         code: 'UNAUTHENTICATED',
         message: 'Không tìm thấy refresh token.',
@@ -243,10 +289,17 @@ export class IdentityService implements OnModuleInit {
       });
     }
 
-    const tokenHash = this.hashToken(rawToken);
-    const tokenRecord = await this.prisma.refreshToken.findFirst({
-      where: { tokenHash },
+    const tokenHashes = Array.from(
+      new Set(rawTokens.map((t) => this.hashToken(t))),
+    );
+    const matchingRecords = await this.prisma.refreshToken.findMany({
+      where: { tokenHash: { in: tokenHashes } },
+      orderBy: { createdAt: 'desc' },
     });
+
+    // Ưu tiên token mới nhất chưa bị revoke (tránh trường hợp trình duyệt gửi kèm cookie cũ từ path khác)
+    const tokenRecord =
+      matchingRecords.find((r) => r.revokedAt === null) ?? matchingRecords[0];
 
     if (!tokenRecord) {
       throw new UnauthorizedException({
@@ -323,11 +376,33 @@ export class IdentityService implements OnModuleInit {
     };
   }
 
-  async logout(rawToken?: string) {
-    if (!rawToken) return;
-    const tokenHash = this.hashToken(rawToken);
+  async logout(rawTokenInput?: string | string[]) {
+    const rawTokens = (
+      Array.isArray(rawTokenInput)
+        ? rawTokenInput
+        : rawTokenInput
+          ? [rawTokenInput]
+          : []
+    ).filter((t): t is string => typeof t === 'string' && t.length > 0);
+    if (rawTokens.length === 0) return;
+
+    const tokenHashes = Array.from(
+      new Set(rawTokens.map((t) => this.hashToken(t))),
+    );
+    const records = await this.prisma.refreshToken.findMany({
+      where: { tokenHash: { in: tokenHashes } },
+      select: { familyId: true },
+    });
+    const familyIds = Array.from(new Set(records.map((r) => r.familyId)));
+
     await this.prisma.refreshToken.updateMany({
-      where: { tokenHash, revokedAt: null },
+      where: {
+        OR: [
+          { tokenHash: { in: tokenHashes } },
+          ...(familyIds.length > 0 ? [{ familyId: { in: familyIds } }] : []),
+        ],
+        revokedAt: null,
+      },
       data: { revokedAt: new Date() },
     });
   }

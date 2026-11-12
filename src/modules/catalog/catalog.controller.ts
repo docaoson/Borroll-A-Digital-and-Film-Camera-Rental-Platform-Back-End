@@ -117,4 +117,3 @@ export class CatalogController {
     return this.catalogService.removeFavorite(userId, modelId);
   }
 }
-

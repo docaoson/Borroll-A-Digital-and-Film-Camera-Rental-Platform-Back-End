@@ -17,6 +17,10 @@ import { AppModule } from '../../src/app.module';
 import { Roles } from '../../src/common/decorators/roles.decorator';
 import { HttpExceptionFilter } from '../../src/common/filters/http-exception.filter';
 import { PrismaService } from '../../src/infra/database/prisma.service';
+import {
+  generateVietnameseImeCandidates,
+  normalizeEmailWithTelex,
+} from '../../src/modules/identity/utils/telex.util';
 
 jest.setTimeout(30000);
 
@@ -255,18 +259,39 @@ describe('Identity Module (e2e)', () => {
       );
     });
 
-    it('should login successfully with valid credentials', async () => {
+    it('should login successfully with valid credentials and normalize invisible/trailing/Vietnamese-IME input characters', async () => {
       const res = await request(httpServer)
         .post('/api/v1/auth/login')
         .send({
-          email: testUser1Email,
-          password,
+          email: ` \u200B${testUser1Email.toUpperCase()}\uFEFF `,
+          password: '\u200BPăsỏd123! ',
         })
         .expect(200);
 
       const body = res.body as AuthBody;
       expect(body).toHaveProperty('accessToken');
       expect(body.user.email).toBe(testUser1Email);
+
+      // Verify Vietnamese IME (Telex / Windows IME) mangled variants for Password123! and admin@borroll.vn
+      for (const telexPassword of [
+        'Păsỏd123!',
+        'Păsởd123!',
+        'Pasưởd123!',
+        'Pasưỏd123!',
+        'Pasởd123!',
+        'Pasword123!',
+      ]) {
+        expect(generateVietnameseImeCandidates(telexPassword)).toContain(
+          password,
+        );
+      }
+      for (const telexEmail of [
+        'admin@boroll.vn',
+        'admin@bởroll.vn',
+        'admin@bỏroll.vn',
+      ]) {
+        expect(normalizeEmailWithTelex(telexEmail)).toBe('admin@borroll.vn');
+      }
     });
   });
 
@@ -441,22 +466,36 @@ describe('Identity Module (e2e)', () => {
         'VALIDATION_ERROR',
       );
 
-      // Verify User 1 was not modified
+      const user2Cookie = extractSetCookies(reg2)[0].split(';')[0];
+
+      // Verify User 1 was not modified and logging in as User 1 revokes User 2's cookie on same browser
       const login1 = await request(httpServer)
         .post('/api/v1/auth/login')
+        .set('Cookie', user2Cookie)
         .send({
           email: testUser1Email,
           password,
         })
         .expect(200);
 
-      const token1 = (login1.body as AuthBody).accessToken;
+      const user1Cookie = extractSetCookies(login1)[0].split(';')[0];
+
+      // Even if a browser sends both a stale cookie (User 2) and the new cookie (User 1), refresh resolves to User 1
+      const refreshAfterSwitch = await request(httpServer)
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', `${user2Cookie}; ${user1Cookie}`)
+        .expect(200);
+
+      const refreshedToken1 = (
+        refreshAfterSwitch.body as { accessToken: string }
+      ).accessToken;
       const getMe1 = await request(httpServer)
         .get('/api/v1/me')
-        .set('Authorization', `Bearer ${token1}`)
+        .set('Authorization', `Bearer ${refreshedToken1}`)
         .expect(200);
 
       expect((getMe1.body as MeBody).fullName).toBe('Test User One');
+      expect((getMe1.body as MeBody).email).toBe(testUser1Email);
     });
   });
 });
