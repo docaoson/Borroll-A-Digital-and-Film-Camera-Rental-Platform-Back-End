@@ -76,12 +76,13 @@ export class IdentityController {
     const isProduction =
       this.configService.get<string>('NODE_ENV') === 'production';
     this.setNoCacheHeaders(res);
+    // Không set maxAge để biến cookie thành Session Cookie (chuẩn theo phiên làm việc).
+    // Khi người dùng đóng/thoát trình duyệt, phiên đăng nhập sẽ tự động kết thúc.
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'lax',
       path: '/api/v1/auth',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
     });
   }
 
