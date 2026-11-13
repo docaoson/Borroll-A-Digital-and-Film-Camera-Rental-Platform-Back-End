@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, UnitCondition, UnitStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { writeAuditLog } from '../../../common/utils/audit.util';
 import { PrismaService } from '../../../infra/database/prisma.service';
@@ -610,6 +610,31 @@ export class ModelService {
               : undefined,
           },
         });
+
+        // Tự động tạo 1 unit vật lý ban đầu tại chi nhánh mặc định để máy sẵn sàng cho thuê
+        const defaultBranch = await tx.branch.findFirst({
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (defaultBranch) {
+          const prefix =
+            (model.slug || 'CAM')
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '')
+              .slice(0, 4) || 'CAM';
+          const randomNum = Math.floor(100 + Math.random() * 900);
+          await tx.rentalUnit.create({
+            data: {
+              modelId: model.id,
+              branchId: defaultBranch.id,
+              serialNumber: `${prefix}-01-${randomNum}`,
+              condition: UnitCondition.EXCELLENT,
+              status: UnitStatus.AVAILABLE,
+              notes: 'Thiết bị sẵn sàng cho thuê',
+            },
+          });
+        }
+
         await writeAuditLog(tx, {
           actorId,
           action: 'MODEL_CREATED',
@@ -680,6 +705,7 @@ export class ModelService {
                   : (dto.inspectionNotes as unknown as Prisma.InputJsonValue),
           },
         });
+
         await writeAuditLog(tx, {
           actorId,
           action: 'MODEL_UPDATED',
@@ -723,6 +749,7 @@ export class ModelService {
           where: { id },
           data: { isActive: false },
         });
+
         await writeAuditLog(tx, {
           actorId,
           action: 'MODEL_DEACTIVATED',
