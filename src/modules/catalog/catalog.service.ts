@@ -8,6 +8,7 @@ import {
   CreateModelImageDto,
   ImagePresignDto,
   ListModelsQueryDto,
+  ModelAvailabilityQueryDto,
   PaginationQueryDto,
   ReorderImagesDto,
   UpdateBranchDto,
@@ -155,8 +156,8 @@ export class CatalogService {
   getPublicModelBySlug(slug: string, userId?: string) {
     return this.modelService.getPublicModelBySlug(slug, userId);
   }
-  getModelAvailability(modelId: string, branchSlug: string, month: string) {
-    return this.modelService.getModelAvailability(modelId, branchSlug, month);
+  getModelAvailability(modelId: string, query: ModelAvailabilityQueryDto) {
+    return this.modelService.getModelAvailability(modelId, query);
   }
   findModelsForBooking(modelIds: string[]) {
     return this.modelService.findModelsForBooking(modelIds);

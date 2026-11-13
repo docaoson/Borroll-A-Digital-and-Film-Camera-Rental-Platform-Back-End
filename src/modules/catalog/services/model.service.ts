@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -20,6 +19,7 @@ import {
   CreateModelImageDto,
   ImagePresignDto,
   ListModelsQueryDto,
+  ModelAvailabilityQueryDto,
   PaginationQueryDto,
   ReorderImagesDto,
   UpdateModelDto,
@@ -123,143 +123,242 @@ export class ModelService {
   }
 
   /**
-   * ARCHITECTURAL DECISION: In-memory filtering and scoring for Catalog Models.
+   * List public models with facet calculation and in-memory pagination.
    *
-   * Rental model search involves multi-token Vietnamese unaccented matching, hierarchical
-   * category-tree expansion, and real-time inventory availability scoring against branch dates.
-   * For the current catalog scale (< 500 models), in-memory evaluation provides deterministic
-   * sub-10ms response times without combinatorial SQL join explosions.
-   * Scalability path: Migrate search to PostgreSQL pg_trgm indices or Elasticsearch when catalog > 10,000 models.
+   * Architectural Decision:
+   * In-memory pagination is intentionally used here because:
+   * 1. Multi-facet counts (categories, brands, price ranges) require aggregations over the
+   *    filtered candidate set across cross-cutting dimensions.
+   * 2. Live unit availability checks across branches are dynamic per date-range and cannot
+   *    be computed by a simple single SQL join without heavy locking or denormalized materialized views.
+   * 3. Catalog size is modest (< 1,000 active models), making in-memory filtering extremely fast (< 15ms).
    */
   async listPublicModels(query: ListModelsQueryDto, userId?: string) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
-    let matchingIds: string[] | null = null;
-    if (query.q) {
-      matchingIds = await this.findMatchingModelIdsByQuery(query.q);
-      if (matchingIds.length === 0) {
-        return { items: [], page, pageSize, total: 0 };
-      }
+    const [allCategories, qMatchedIds] = await Promise.all([
+      this.prisma.category.findMany({
+        select: { id: true, slug: true, name: true, parentId: true },
+      }),
+      query.q?.trim()
+        ? this.findMatchingModelIdsByQuery(query.q)
+        : Promise.resolve<string[] | null>(null),
+    ]);
+    const categoryById = new Map(allCategories.map((c) => [c.id, c]));
+
+    const requestedCategorySlugs = (query.category ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const expandedCategorySlugs = this.expandCategorySlugs(
+      requestedCategorySlugs,
+      allCategories,
+    );
+
+    const requestedBrandSlugs = (query.brand ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const hasDateRange = Boolean(query.from && query.to);
+    const activeBranchFilter = query.branch?.trim() || undefined;
+
+    const baseWhere: Prisma.RentalModelWhereInput = { isActive: true };
+    if (qMatchedIds !== null) {
+      baseWhere.id = { in: qMatchedIds };
+    }
+    if (query.kind) baseWhere.kind = query.kind;
+    if (query.cameraType) baseWhere.cameraType = query.cameraType;
+    if (query.mount) baseWhere.mount = query.mount;
+    if (query.featured === 'true') baseWhere.isFeatured = true;
+    if (query.excludeId) {
+      baseWhere.AND = [{ id: { not: query.excludeId } }];
     }
 
-    const where: Prisma.RentalModelWhereInput = {
-      isActive: true,
-    };
-
-    if (matchingIds !== null) {
-      where.id = { in: matchingIds };
+    let orderBy: Prisma.RentalModelOrderByWithRelationInput[] = [
+      { isFeatured: 'desc' },
+      { createdAt: 'desc' },
+    ];
+    if (query.sort === 'price_asc') {
+      orderBy = [{ pricePerDay: 'asc' }, { id: 'asc' }];
+    } else if (query.sort === 'price_desc') {
+      orderBy = [{ pricePerDay: 'desc' }, { id: 'asc' }];
+    } else if (query.sort === 'newest') {
+      orderBy = [{ createdAt: 'desc' }, { id: 'asc' }];
     }
 
-    if (query.kind) {
-      where.kind = query.kind;
-    }
-
-    if (query.cameraType) {
-      where.cameraType = query.cameraType;
-    }
-
-    if (query.brand) {
-      const brandSlugs = query.brand
-        .split(',')
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean);
-      if (brandSlugs.length > 0) {
-        where.brand = { slug: { in: brandSlugs } };
-      }
-    }
-
-    if (query.category) {
-      const catSlugs = query.category
-        .split(',')
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean);
-      if (catSlugs.length > 0) {
-        const allCategories = await this.prisma.category.findMany({
-          select: { id: true, slug: true, parentId: true },
-        });
-        const expanded = this.expandCategorySlugs(catSlugs, allCategories);
-        where.category = { slug: { in: expanded } };
-      }
-    }
-
-    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
-      where.pricePerDay = {};
-      if (query.minPrice !== undefined) {
-        where.pricePerDay.gte = query.minPrice;
-      }
-      if (query.maxPrice !== undefined) {
-        where.pricePerDay.lte = query.maxPrice;
-      }
-    }
-
-    const allModels = await this.prisma.rentalModel.findMany({
-      where,
+    const candidates = await this.prisma.rentalModel.findMany({
+      where: baseWhere,
       include: {
         brand: { select: { slug: true, name: true } },
-        category: { select: { slug: true, name: true } },
+        category: {
+          select: { id: true, slug: true, name: true, parentId: true },
+        },
         images: {
           where: { kind: 'PRODUCT' },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           take: 1,
         },
+        units:
+          activeBranchFilter && !hasDateRange
+            ? {
+                where: {
+                  status: 'AVAILABLE',
+                  branch: { slug: activeBranchFilter, isActive: true },
+                },
+                select: { id: true },
+                take: 1,
+              }
+            : false,
       },
-      orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
+      orderBy,
     });
 
-    const favoriteModelIds = new Set<string>();
-    if (userId) {
-      const favs = await this.prisma.favorite.findMany({
-        where: { userId },
-        select: { modelId: true },
-      });
-      for (const f of favs) {
-        favoriteModelIds.add(f.modelId);
+    let availabilityMap: Map<string, string[]> | null = null;
+    if (hasDateRange) {
+      availabilityMap =
+        await this.inventoryService.getAvailableBranchSlugsByModel({
+          modelIds: candidates.map((m) => m.id),
+          branchSlug: activeBranchFilter,
+          startDate: query.from!,
+          endDate: query.to!,
+        });
+    }
+
+    const baseFiltered = candidates.filter((model) => {
+      if (hasDateRange) {
+        const branches = availabilityMap?.get(model.id) ?? [];
+        return branches.length > 0;
+      }
+      if (activeBranchFilter) {
+        return Array.isArray(model.units) && model.units.length > 0;
+      }
+      return true;
+    });
+
+    const matchesCategory = (m: (typeof baseFiltered)[number]) =>
+      expandedCategorySlugs.length === 0 ||
+      expandedCategorySlugs.includes(m.category.slug);
+
+    const matchesBrand = (m: (typeof baseFiltered)[number]) =>
+      requestedBrandSlugs.length === 0 ||
+      requestedBrandSlugs.includes(m.brand.slug);
+
+    const matchesPrice = (m: (typeof baseFiltered)[number]) =>
+      (query.minPrice === undefined || m.pricePerDay >= query.minPrice) &&
+      (query.maxPrice === undefined || m.pricePerDay <= query.maxPrice);
+
+    const finalFiltered = baseFiltered.filter(
+      (m) => matchesCategory(m) && matchesBrand(m) && matchesPrice(m),
+    );
+
+    const forPriceFacet = baseFiltered.filter(
+      (m) => matchesCategory(m) && matchesBrand(m),
+    );
+    const forCategoryFacet = baseFiltered.filter(
+      (m) => matchesBrand(m) && matchesPrice(m),
+    );
+    const forBrandFacet = baseFiltered.filter(
+      (m) => matchesCategory(m) && matchesPrice(m),
+    );
+
+    const priceFacet = [
+      {
+        key: 'lt100k',
+        min: 0,
+        max: 100000,
+        count: forPriceFacet.filter((m) => m.pricePerDay < 100000).length,
+      },
+      {
+        key: '100k-300k',
+        min: 100000,
+        max: 300000,
+        count: forPriceFacet.filter(
+          (m) => m.pricePerDay >= 100000 && m.pricePerDay < 300000,
+        ).length,
+      },
+      {
+        key: '300k-600k',
+        min: 300000,
+        max: 600000,
+        count: forPriceFacet.filter(
+          (m) => m.pricePerDay >= 300000 && m.pricePerDay < 600000,
+        ).length,
+      },
+      {
+        key: 'gte600k',
+        min: 600000,
+        max: null,
+        count: forPriceFacet.filter((m) => m.pricePerDay >= 600000).length,
+      },
+    ];
+
+    const categoryCounts = new Map<
+      string,
+      { slug: string; name: string; parentSlug: string | null; count: number }
+    >();
+    for (const m of forCategoryFacet) {
+      const parent = m.category.parentId
+        ? categoryById.get(m.category.parentId)
+        : null;
+      const existing = categoryCounts.get(m.category.slug);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        categoryCounts.set(m.category.slug, {
+          slug: m.category.slug,
+          name: m.category.name,
+          parentSlug: parent?.slug ?? null,
+          count: 1,
+        });
       }
     }
 
-    let branchIdFilter: string | null = null;
-    if (query.branch) {
-      const br = await this.prisma.branch.findUnique({
-        where: { slug: query.branch },
-        select: { id: true },
-      });
-      branchIdFilter = br?.id ?? '__none__';
+    const brandCounts = new Map<
+      string,
+      { slug: string; name: string; count: number }
+    >();
+    for (const m of forBrandFacet) {
+      const existing = brandCounts.get(m.brand.slug);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        brandCounts.set(m.brand.slug, {
+          slug: m.brand.slug,
+          name: m.brand.name,
+          count: 1,
+        });
+      }
     }
 
-    const start = query.startDate;
-    const end = query.endDate;
-    const hasDateFilter = Boolean(start && end);
+    const total = finalFiltered.length;
+    const paged = finalFiltered.slice((page - 1) * pageSize, page * pageSize);
 
-    const itemsWithAvail = await Promise.all(
-      allModels.map(async (m) => {
-        let isAvailable = true;
-        if (hasDateFilter && start && end) {
-          isAvailable = await this.inventoryService.checkModelAvailability(
-            m.id,
-            branchIdFilter ?? undefined,
-            start,
-            end,
-          );
-        } else if (branchIdFilter) {
-          const unitCount = await this.prisma.rentalUnit.count({
-            where: {
-              modelId: m.id,
-              branchId: branchIdFilter,
-              status: 'AVAILABLE',
-            },
-          });
-          isAvailable = unitCount > 0;
-        }
+    const favoriteSet = new Set<string>();
+    if (userId && paged.length > 0) {
+      const favs = await this.prisma.favorite.findMany({
+        where: {
+          userId,
+          modelId: { in: paged.map((m) => m.id) },
+        },
+        select: { modelId: true },
+      });
+      for (const fav of favs) {
+        favoriteSet.add(fav.modelId);
+      }
+    }
 
-        return {
+    return {
+      items: paged.map((m) => {
+        const baseItem: Record<string, unknown> = {
           id: m.id,
           slug: m.slug,
           name: m.name,
           kind: m.kind,
           cameraType: m.cameraType,
           brand: m.brand,
-          category: m.category,
+          category: { slug: m.category.slug, name: m.category.name },
           mount: m.mount,
           pricePerDay: m.pricePerDay,
           pricePerWeek: m.pricePerWeek,
@@ -269,40 +368,22 @@ export class ModelService {
             : null,
           isFeatured: m.isFeatured,
           badges: this.buildBadges(m.createdAt),
-          isAvailable,
-          isFavorite: favoriteModelIds.has(m.id),
+          isFavorite: favoriteSet.has(m.id),
+          description: m.description,
         };
+        if (hasDateRange) {
+          baseItem.availableAtBranches = availabilityMap?.get(m.id) ?? [];
+        }
+        return baseItem;
       }),
-    );
-
-    let filtered = itemsWithAvail;
-    if (query.availableOnly) {
-      filtered = filtered.filter((item) => item.isAvailable);
-    }
-
-    switch (query.sort) {
-      case 'price_asc':
-        filtered.sort((a, b) => a.pricePerDay - b.pricePerDay);
-        break;
-      case 'price_desc':
-        filtered.sort((a, b) => b.pricePerDay - a.pricePerDay);
-        break;
-      case 'newest':
-        break;
-      case 'featured':
-      default:
-        filtered.sort((a, b) => (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0));
-        break;
-    }
-
-    const total = filtered.length;
-    const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
-
-    return {
-      items: paginated,
       page,
       pageSize,
       total,
+      facets: {
+        price: priceFacet,
+        categories: Array.from(categoryCounts.values()),
+        brands: Array.from(brandCounts.values()),
+      },
     };
   }
 
@@ -310,11 +391,9 @@ export class ModelService {
     const model = await this.prisma.rentalModel.findFirst({
       where: { slug, isActive: true },
       include: {
-        brand: true,
-        category: true,
-        images: {
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-        },
+        brand: { select: { slug: true, name: true } },
+        category: { select: { slug: true, name: true } },
+        images: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
         specs: true,
       },
     });
@@ -327,24 +406,26 @@ export class ModelService {
       });
     }
 
-    let isFavorite = false;
-    if (userId) {
-      const fav = await this.prisma.favorite.findUnique({
-        where: { userId_modelId: { userId, modelId: model.id } },
-      });
-      isFavorite = Boolean(fav);
-    }
+    const [availableAtBranches, favorite] = await Promise.all([
+      this.inventoryService.getActiveUnitBranchSlugsForModel(model.id),
+      userId
+        ? this.prisma.favorite.findUnique({
+            where: { userId_modelId: { userId, modelId: model.id } },
+          })
+        : Promise.resolve(null),
+    ]);
 
-    const units = await this.prisma.rentalUnit.findMany({
-      where: { modelId: model.id, status: 'AVAILABLE' },
-      select: { branchId: true },
-    });
-    const branchIds = Array.from(new Set(units.map((u) => u.branchId)));
-    const branches = await this.prisma.branch.findMany({
-      where: { id: { in: branchIds }, isActive: true },
-      select: { slug: true, name: true },
-      orderBy: [{ name: 'asc' }],
-    });
+    const inspection =
+      model.lastInspectedAt || model.inspectionNotes
+        ? {
+            lastInspectedAt: model.lastInspectedAt
+              ? model.lastInspectedAt.toISOString()
+              : null,
+            items: Array.isArray(model.inspectionNotes)
+              ? model.inspectionNotes
+              : [],
+          }
+        : null;
 
     return {
       id: model.id,
@@ -352,100 +433,62 @@ export class ModelService {
       name: model.name,
       kind: model.kind,
       cameraType: model.cameraType,
-      brand: model.brand,
-      category: model.category,
+      description: model.description,
       mount: model.mount,
       filmFormat: model.filmFormat,
-      description: model.description,
+      brand: model.brand,
+      category: model.category,
       pricePerDay: model.pricePerDay,
       pricePerWeek: model.pricePerWeek,
       deposit: model.deposit,
-      isFeatured: model.isFeatured,
-      badges: this.buildBadges(model.createdAt),
-      isFavorite,
       images: model.images.map((img) => ({
         id: img.id,
-        kind: img.kind,
         url: this.getModelImageUrl(img.path),
+        kind: img.kind,
         caption: img.caption,
-        sortOrder: img.sortOrder,
+        sampleLens: img.sampleLens,
       })),
-      specs: model.specs
-        ? {
-            power: model.specs.power,
-            controls: model.specs.controls,
-            quirks: model.specs.quirks,
-            beginnerNotes: model.specs.beginnerNotes,
-          }
-        : null,
-      availableAtBranches: branches,
+      specs: model.specs?.specs ?? null,
+      inspection,
+      availableAtBranches,
+      aiSetupAvailable: false,
+      isFavorite: Boolean(favorite),
     };
   }
 
   async getModelAvailability(
     modelId: string,
-    branchSlug: string,
-    month: string,
+    query: ModelAvailabilityQueryDto,
   ) {
-    const branch = await this.prisma.branch.findUnique({
-      where: { slug: branchSlug },
-    });
-    if (!branch) {
+    const [model, branch] = await Promise.all([
+      this.prisma.rentalModel.findFirst({
+        where: { id: modelId, isActive: true },
+        select: { id: true },
+      }),
+      this.prisma.branch.findFirst({
+        where: { slug: query.branch, isActive: true },
+        select: { id: true, slug: true },
+      }),
+    ]);
+
+    if (!model || !branch) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
-        message: 'Không tìm thấy chi nhánh.',
+        message: 'Không tìm thấy mẫu máy hoặc chi nhánh.',
         details: {},
       });
     }
 
-    const [yearStr, monthStr] = month.split('-');
-    const year = parseInt(yearStr, 10);
-    const m = parseInt(monthStr, 10);
-    const daysInMonth = new Date(year, m, 0).getDate();
-
-    const units = await this.prisma.rentalUnit.findMany({
-      where: {
-        modelId,
+    const unavailableDates =
+      await this.inventoryService.getUnavailableDatesForModel({
+        modelId: model.id,
         branchId: branch.id,
-        status: { in: ['AVAILABLE', 'MAINTENANCE'] },
-      },
-      select: { id: true },
-    });
-    const totalUnits = units.length;
-
-    if (totalUnits === 0) {
-      const allDates: string[] = [];
-      for (let day = 1; day <= daysInMonth; day++) {
-        allDates.push(
-          `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-        );
-      }
-      return {
-        month,
-        branch: branch.slug,
-        totalUnits: 0,
-        unavailableDates: allDates,
-      };
-    }
-
-    const unavailableDates: string[] = [];
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dayStr = `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const isAvail = await this.inventoryService.checkModelAvailability(
-        modelId,
-        branch.id,
-        dayStr,
-        dayStr,
-      );
-      if (!isAvail) {
-        unavailableDates.push(dayStr);
-      }
-    }
+        month: query.month,
+      });
 
     return {
-      month,
+      month: query.month,
       branch: branch.slug,
-      totalUnits,
       unavailableDates,
     };
   }
@@ -616,19 +659,25 @@ export class ModelService {
             slug: dto.slug?.trim().toLowerCase(),
             description: dto.description?.trim(),
             cameraType: dto.cameraType,
-            mount: dto.mount !== undefined ? dto.mount : undefined,
-            filmFormat: dto.filmFormat !== undefined ? dto.filmFormat : undefined,
+            mount: dto.mount,
+            filmFormat: dto.filmFormat,
             pricePerDay: dto.pricePerDay,
             pricePerWeek: dto.pricePerWeek,
             deposit: dto.deposit,
             isActive: dto.isActive,
             isFeatured: dto.isFeatured,
-            lastInspectedAt: dto.lastInspectedAt
-              ? new Date(dto.lastInspectedAt)
-              : undefined,
-            inspectionNotes: dto.inspectionNotes
-              ? (dto.inspectionNotes as unknown as Prisma.InputJsonValue)
-              : undefined,
+            lastInspectedAt:
+              dto.lastInspectedAt === undefined
+                ? undefined
+                : dto.lastInspectedAt === null
+                  ? null
+                  : new Date(dto.lastInspectedAt),
+            inspectionNotes:
+              dto.inspectionNotes === undefined
+                ? undefined
+                : dto.inspectionNotes === null
+                  ? Prisma.DbNull
+                  : (dto.inspectionNotes as unknown as Prisma.InputJsonValue),
           },
         });
         await writeAuditLog(tx, {
@@ -636,7 +685,7 @@ export class ModelService {
           action: 'MODEL_UPDATED',
           targetType: 'RENTAL_MODEL',
           targetId: id,
-          metadata: { id },
+          metadata: dto as unknown as Prisma.InputJsonValue,
         });
       });
       return this.getAdminModel(id);
@@ -658,6 +707,7 @@ export class ModelService {
   async deleteAdminModel(id: string, actorId: string) {
     const existing = await this.prisma.rentalModel.findUnique({
       where: { id },
+      include: { _count: { select: { bookingUnits: true, units: true } } },
     });
     if (!existing) {
       throw new NotFoundException({
@@ -667,15 +717,20 @@ export class ModelService {
       });
     }
 
-    const unitsCount = await this.prisma.rentalUnit.count({
-      where: { modelId: id },
-    });
-    if (unitsCount > 0) {
-      await this.prisma.rentalModel.update({
-        where: { id },
-        data: { isActive: false },
+    if (existing._count.bookingUnits > 0 || existing._count.units > 0) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.rentalModel.update({
+          where: { id },
+          data: { isActive: false },
+        });
+        await writeAuditLog(tx, {
+          actorId,
+          action: 'MODEL_DEACTIVATED',
+          targetType: 'RENTAL_MODEL',
+          targetId: id,
+        });
       });
-      return { success: true, message: 'Mẫu máy có chứa thiết bị trong kho nên đã chuyển sang ẩn (isActive = false).' };
+      return { id, isActive: false, hidden: true };
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -685,20 +740,17 @@ export class ModelService {
         action: 'MODEL_DELETED',
         targetType: 'RENTAL_MODEL',
         targetId: id,
-        metadata: { slug: existing.slug },
       });
     });
-    return { success: true };
+    return { id, deleted: true };
   }
 
   async updateModelSpecs(
-    modelId: string,
+    id: string,
     dto: UpdateModelSpecsDto,
     actorId: string,
   ) {
-    const model = await this.prisma.rentalModel.findUnique({
-      where: { id: modelId },
-    });
+    const model = await this.prisma.rentalModel.findUnique({ where: { id } });
     if (!model) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
@@ -707,37 +759,28 @@ export class ModelService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const specs = await tx.modelSpec.upsert({
-        where: { modelId },
-        update: {
-          power: dto.power,
-          controls: dto.controls,
-          quirks: dto.quirks,
-          beginnerNotes: dto.beginnerNotes,
-        },
-        create: {
-          modelId,
-          power: dto.power,
-          controls: dto.controls ?? [],
-          quirks: dto.quirks ?? [],
-          beginnerNotes: dto.beginnerNotes ?? [],
-        },
+    const specsJson = dto as unknown as Prisma.InputJsonValue;
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const upserted = await tx.rentalModelSpecs.upsert({
+        where: { modelId: id },
+        update: { specs: specsJson },
+        create: { modelId: id, specs: specsJson },
       });
       await writeAuditLog(tx, {
         actorId,
         action: 'MODEL_SPECS_UPDATED',
         targetType: 'RENTAL_MODEL',
-        targetId: modelId,
-        metadata: { modelId },
+        targetId: id,
       });
-      return specs;
+      return upserted;
     });
+    return { modelId: saved.modelId, specs: saved.specs };
   }
 
   async presignModelImage(modelId: string, dto: ImagePresignDto) {
     const model = await this.prisma.rentalModel.findUnique({
       where: { id: modelId },
+      select: { id: true },
     });
     if (!model) {
       throw new NotFoundException({
@@ -746,23 +789,12 @@ export class ModelService {
         details: {},
       });
     }
-
     const ext = CONTENT_TYPE_EXTENSIONS[dto.contentType];
-    const uuid = crypto.randomUUID();
-    const objectPath = `models/${modelId}/${uuid}.${ext}`;
-    const bucket = this.getRentalImagesBucket();
-
-    const presigned = await this.storageService.createSignedUploadUrl(
-      bucket,
-      objectPath,
-      600,
+    const path = `models/${modelId}/${crypto.randomUUID()}.${ext}`;
+    return this.storageService.createUploadUrl(
+      this.getRentalImagesBucket(),
+      path,
     );
-
-    return {
-      uploadUrl: presigned.signedUrl,
-      path: objectPath,
-      publicUrl: this.storageService.getPublicUrl(bucket, objectPath),
-    };
   }
 
   async addModelImage(
@@ -772,6 +804,7 @@ export class ModelService {
   ) {
     const model = await this.prisma.rentalModel.findUnique({
       where: { id: modelId },
+      select: { id: true },
     });
     if (!model) {
       throw new NotFoundException({
@@ -781,13 +814,20 @@ export class ModelService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const img = await tx.modelImage.create({
+    await this.storageService.assertOwnedFile(
+      this.getRentalImagesBucket(),
+      dto.path,
+      `models/${modelId}/`,
+    );
+
+    const image = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.rentalModelImage.create({
         data: {
           modelId,
           path: dto.path,
           kind: dto.kind,
-          caption: dto.caption?.trim() || null,
+          caption: dto.caption ?? null,
+          sampleLens: dto.sampleLens ?? null,
           sortOrder: dto.sortOrder ?? 0,
         },
       });
@@ -796,13 +836,15 @@ export class ModelService {
         action: 'MODEL_IMAGE_ADDED',
         targetType: 'RENTAL_MODEL',
         targetId: modelId,
-        metadata: { imageId: img.id, path: img.path },
+        metadata: { imageId: created.id, path: created.path },
       });
-      return {
-        ...img,
-        url: this.getModelImageUrl(img.path),
-      };
+      return created;
     });
+
+    return {
+      ...image,
+      url: this.getModelImageUrl(image.path),
+    };
   }
 
   async reorderModelImages(
@@ -810,26 +852,27 @@ export class ModelService {
     dto: ReorderImagesDto,
     actorId: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      for (const item of dto.items) {
-        await tx.modelImage.updateMany({
-          where: { id: item.id, modelId },
-          data: { sortOrder: item.sortOrder },
-        });
-      }
+    await this.prisma.$transaction(async (tx) => {
+      await Promise.all(
+        dto.imageIds.map((imageId, i) =>
+          tx.rentalModelImage.updateMany({
+            where: { id: imageId, modelId },
+            data: { sortOrder: i },
+          }),
+        ),
+      );
       await writeAuditLog(tx, {
         actorId,
         action: 'MODEL_IMAGES_REORDERED',
         targetType: 'RENTAL_MODEL',
         targetId: modelId,
-        metadata: { count: dto.items.length },
       });
-      return { success: true };
     });
+    return { ok: true };
   }
 
   async deleteModelImage(modelId: string, imageId: string, actorId: string) {
-    const img = await this.prisma.modelImage.findFirst({
+    const img = await this.prisma.rentalModelImage.findFirst({
       where: { id: imageId, modelId },
     });
     if (!img) {
@@ -839,18 +882,17 @@ export class ModelService {
         details: {},
       });
     }
-
+    await this.storageService.remove(this.getRentalImagesBucket(), img.path);
     await this.prisma.$transaction(async (tx) => {
-      await tx.modelImage.delete({ where: { id: imageId } });
+      await tx.rentalModelImage.delete({ where: { id: imageId } });
       await writeAuditLog(tx, {
         actorId,
         action: 'MODEL_IMAGE_DELETED',
         targetType: 'RENTAL_MODEL',
         targetId: modelId,
-        metadata: { imageId, path: img.path },
+        metadata: { imageId },
       });
     });
-    return { success: true };
+    return { deleted: true };
   }
 }
-
