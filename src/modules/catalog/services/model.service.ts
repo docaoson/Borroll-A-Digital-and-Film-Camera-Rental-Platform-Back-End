@@ -67,10 +67,23 @@ export class ModelService {
       return [];
     }
 
-    const conditions = tokens.map(
-      (token) =>
-        Prisma.sql`unaccent(lower(rm.name || ' ' || b.name)) LIKE '%' || unaccent(lower(${token})) || '%'`,
-    );
+    const conditions = tokens.map((token) => {
+      // Với token ngắn (< 3 ký tự), so khớp hãng theo tiền tố từ (prefix)
+      // để khi gõ 'a' không bị match nhầm các hãng có chứa chữ 'a' như 'Canon'
+      if (token.length < 3) {
+        return Prisma.sql`(
+          unaccent(lower(rm.name)) LIKE '%' || unaccent(lower(${token})) || '%'
+          OR unaccent(lower(b.name)) LIKE unaccent(lower(${token})) || '%'
+          OR unaccent(lower(b.name)) LIKE '% ' || unaccent(lower(${token})) || '%'
+        )`;
+      }
+
+      // Với token >= 3 ký tự, so khớp tự do (substring) trong cả tên máy hoặc tên hãng
+      return Prisma.sql`(
+        unaccent(lower(rm.name)) LIKE '%' || unaccent(lower(${token})) || '%'
+        OR unaccent(lower(b.name)) LIKE '%' || unaccent(lower(${token})) || '%'
+      )`;
+    });
 
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT rm.id
