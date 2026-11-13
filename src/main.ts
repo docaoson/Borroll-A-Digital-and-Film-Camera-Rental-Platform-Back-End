@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Logger,
   ValidationError,
   ValidationPipe,
 } from '@nestjs/common';
@@ -7,17 +8,29 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
+  // 1. Security Headers
+  app.use(helmet());
+
+  // 2. Cookie Parser
   app.use(cookieParser());
 
+  // 3. Trust Proxy (hỗ trợ reverse proxy Render, Vercel, Cloudflare lấy IP chuẩn cho Throttler)
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 1);
+
+  // 4. Global API Prefix
   app.setGlobalPrefix('api/v1');
 
+  // 5. CORS
   const corsOrigin = configService.get<string>(
     'CORS_ORIGIN',
     'http://localhost:3000',
@@ -31,6 +44,7 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // 6. Validation Pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -58,19 +72,28 @@ async function bootstrap() {
     }),
   );
 
+  // 7. Global Exception Filter
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Borroll API')
-    .setDescription('Borroll Camera Rental Backend API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+  // 8. Swagger Docs: Gating - Tắt khi NODE_ENV = 'production'
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  if (nodeEnv !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Borroll API')
+      .setDescription('Borroll Camera Rental Backend API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+    logger.log('Swagger documentation enabled at /api/docs');
+  } else {
+    logger.log('Swagger documentation disabled in production mode');
+  }
 
+  // 9. Server Listen
   const port = configService.get<number>('PORT', 4000);
   await app.listen(port);
-  console.log(`Application is running on port ${port}`);
+  logger.log(`Application is running on port ${port} [ENV: ${nodeEnv}]`);
 }
 void bootstrap();
