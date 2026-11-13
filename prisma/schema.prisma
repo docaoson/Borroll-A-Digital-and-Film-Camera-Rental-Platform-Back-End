@@ -198,6 +198,7 @@ model Category {
   name      String
   slug      String   @unique
   sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -213,6 +214,7 @@ model Brand {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -291,6 +293,7 @@ model FilmProduct {
   format    String
   price     Int
   inStock   Boolean  @default(true) @map("in_stock")
+  isActive  Boolean  @default(true) @map("is_active")
   imagePath String?  @map("image_path")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -480,4 +483,19 @@ model PaymentRecord {
 
   @@index([bookingId])
   @@map("payment_records")
+}
+
+model ContactSetting {
+  id              String   @id @default("default")
+  zaloOaId        String?  @map("zalo_oa_id")
+  zaloPhone       String?  @map("zalo_phone")
+  messengerPage   String?  @map("messenger_page")
+  instagramHandle String?  @map("instagram_handle")
+  hotline         String?
+  welcomeMessage  String?  @map("welcome_message")
+  isChatEnabled   Boolean  @default(false) @map("is_chat_enabled")
+  updatedBy       String?  @map("updated_by")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("contact_settings")
 }

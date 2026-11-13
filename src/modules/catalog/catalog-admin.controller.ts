@@ -28,6 +28,7 @@ import {
   UpdateBranchDto,
   UpdateBrandDto,
   UpdateCategoryDto,
+  UpdateContactSettingsDto,
   UpdateFilmProductDto,
   UpdateModelDto,
   UpdateModelSpecsDto,
@@ -240,5 +241,15 @@ export class CatalogAdminController {
     @CurrentUser('userId') actorId: string,
   ) {
     return this.catalogService.deleteFilmProduct(id, actorId);
+  }
+
+  @Put('contact-settings')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Admin: Cập nhật cấu hình liên hệ' })
+  updateContactSettings(
+    @Body() dto: UpdateContactSettingsDto,
+    @CurrentUser('userId') actorId: string,
+  ) {
+    return this.catalogService.updateContactSettings(dto, actorId);
   }
 }

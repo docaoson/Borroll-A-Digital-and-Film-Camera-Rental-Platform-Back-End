@@ -169,9 +169,35 @@ Lỗi: `409 EMAIL_ALREADY_USED`, `400 VALIDATION_ERROR` (mật khẩu tối thi�
 **🔑 `PATCH /me`** — body gồm các trường cần đổi: `fullName`, `phone`, `avatarPath` (`null` để xóa ảnh) → trả lại `me`. `avatarPath` phải là path nhận từ `/me/avatar/presign` của chính mình, nếu không `400`.
 **🔑 `POST /me/avatar/presign`** — body `{ "contentType": "image/jpeg" }` → `{ "uploadUrl": "https://...", "path": "avatars/u1/abc.jpg", "token": "..." }`. FE `PUT` file lên `uploadUrl` (kèm đúng `Content-Type`), rồi `PATCH /me` với `avatarPath`. Ảnh JPG/PNG/WebP, tối đa 2 MB.
 
-### 3.2 Chi nhánh, danh mục, hãng, film
+### 3.2 Chi nhánh, danh mục, hãng, film, cấu hình liên hệ
 
 **🌐 `GET /branches`** → `{ "items": [ { "id": "b1", "slug": "tay-ho", "name": "Chi nhánh Tây Hồ", "address": "...", "phone": "0866747114", "openHours": "09:00 – 21:00", "mapUrl": "https://..." } ] }`
+
+**🌐 `GET /contact-settings`** → trả cấu hình liên hệ công khai (cache 5 phút ở BE):
+```json
+{
+  "chatEnabled": true,
+  "welcomeMessage": "Xin chào! BORROLL hỗ trợ thuê máy ảnh.",
+  "zalo": {
+    "oaId": "123456789012345",
+    "url": "https://zalo.me/0912345678"
+  },
+  "messenger": {
+    "url": "https://m.me/borroll.camera"
+  },
+  "instagram": {
+    "handle": "borroll.camera",
+    "url": "https://instagram.com/borroll.camera"
+  },
+  "hotline": "0912345678",
+  "branches": [
+    { "slug": "tay-ho", "name": "Chi nhánh Tây Hồ", "phone": "0866747114" },
+    { "slug": "thanh-xuan", "name": "Chi nhánh Thanh Xuân", "phone": "0866747115" }
+  ]
+}
+```
+- URL do BE tự dựng (`https://zalo.me/<phone>`, `https://instagram.com/<handle>`); trường chưa cấu hình trả `null`.
+- FE ẩn nút liên hệ có giá trị `null`. Zalo mở khung chat trực tiếp tại trang. Hotline hiển thị danh sách 2 chi nhánh để khách gọi trực tiếp.
 
 **🌐 `GET /categories`** → cây:
 ```json
@@ -396,6 +422,7 @@ CRUD theo kiểu REST (`POST` tạo, `PATCH /:id` sửa, `GET` danh sách/chi ti
 | Danh mục, hãng | `/admin/categories`, `/admin/brands` | `name`, `slug`, `parentId`, `sortOrder` |
 | Chi nhánh | `/admin/branches` | `name`, `slug`, `address`, `phone`, `openHours`, `mapUrl`, `isActive` |
 | Film bán kèm | `/admin/film-products` | `name`, `iso`, `format`, `price`, `inStock` |
+| Cấu hình liên hệ | `PUT /admin/contact-settings` | `zaloOaId` (chữ số, tối đa 30), `zaloPhone` (`/^0\d{9}$/`), `messengerPage` (`/^[A-Za-z0-9.]{5,50}$/`), `hotline` (`/^0\d{9}$/`), `welcomeMessage` (tối đa 120 ký tự), `isChatEnabled` (`boolean`); không nhận URL hoặc HTML/script (`400`) |
 | Người dùng | `GET /admin/users?q=&role=&page=`, `PATCH /admin/users/:id` | body `{ "roles": ["RENTER","STAFF"], "status": "ACTIVE" }` |
 
 - Không xóa cứng mẫu máy hay chiếc máy đã từng có đơn; chỉ ẩn (`isActive = false`) hoặc `RETIRED`.
@@ -420,3 +447,4 @@ CRUD theo kiểu REST (`POST` tạo, `PATCH /:id` sửa, `GET` danh sách/chi ti
 |---|---|---|
 | 2026-11-07 | Bản đầu (mô hình nền tảng) | BE |
 | 2026-11-10 | Viết lại hoàn toàn theo mô hình cửa hàng: bỏ chủ máy, duyệt tin, KYC; thêm chi nhánh, mẫu máy/chiếc máy, đơn nhiều món, biên bản giao nhận, sổ thu chi, nhân viên, Trợ lý AI | BE |
+| 2026-11-13 | Thêm `GET /contact-settings` (@Public) và `PUT /admin/contact-settings` (@Roles('ADMIN')) quản lý cấu hình liên hệ Zalo, Messenger, Hotline | BE + FE |

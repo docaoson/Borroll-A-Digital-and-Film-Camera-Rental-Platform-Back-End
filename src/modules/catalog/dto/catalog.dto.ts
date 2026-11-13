@@ -427,6 +427,11 @@ export class CreateCategoryDto {
   @Type(() => Number)
   @IsInt()
   sortOrder?: number = 0;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
 }
 
 export class UpdateCategoryDto {
@@ -452,6 +457,11 @@ export class UpdateCategoryDto {
   @Type(() => Number)
   @IsInt()
   sortOrder?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class CreateBrandDto {
@@ -464,6 +474,11 @@ export class CreateBrandDto {
   @IsString()
   @IsNotEmpty()
   slug!: string;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
 }
 
 export class UpdateBrandDto {
@@ -478,6 +493,11 @@ export class UpdateBrandDto {
   @IsString()
   @IsNotEmpty()
   slug?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class CreateBranchDto {
@@ -586,6 +606,11 @@ export class CreateFilmProductDto {
   @IsOptional()
   @IsBoolean()
   inStock?: boolean = true;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
 }
 
 export class UpdateFilmProductDto {
@@ -619,4 +644,84 @@ export class UpdateFilmProductDto {
   @IsOptional()
   @IsBoolean()
   inStock?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateContactSettingsDto {
+  @ApiPropertyOptional({ nullable: true, example: '1234567890123456789' })
+  @IsOptional()
+  @IsString()
+  zaloOaId?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  zalo_oa_id?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '0912345678' })
+  @IsOptional()
+  @IsString()
+  zaloPhone?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  zalo_phone?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'borroll.camera' })
+  @IsOptional()
+  @IsString()
+  messengerPage?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  messenger_page?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'borroll.camera' })
+  @IsOptional()
+  @IsString()
+  instagramHandle?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  instagram_handle?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '0912345678' })
+  @IsOptional()
+  @IsString()
+  hotline?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Xin chào! BORROLL có thể hỗ trợ gì cho bạn?',
+  })
+  @IsOptional()
+  @IsString()
+  welcomeMessage?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  welcome_message?: string | null;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  isChatEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  is_chat_enabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  chatEnabled?: boolean;
 }

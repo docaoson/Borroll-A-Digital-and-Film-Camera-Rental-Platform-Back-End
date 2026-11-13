@@ -421,6 +421,16 @@ paths:
       summary: Danh sách film bán kèm
       tags:
         - Catalog & Favorites
+  /api/v1/contact-settings:
+    get:
+      operationId: CatalogController_getContactSettings
+      parameters: []
+      responses:
+        '200':
+          description: ''
+      summary: Cấu hình liên hệ công khai & danh sách chi nhánh
+      tags:
+        - Catalog & Favorites
   /api/v1/models:
     get:
       operationId: CatalogController_listModels
@@ -1171,6 +1181,24 @@ paths:
           description: ''
       security:
         - bearer: []
+      tags:
+        - Admin Catalog
+  /api/v1/admin/contact-settings:
+    put:
+      operationId: CatalogAdminController_updateContactSettings
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContactSettingsDto'
+      responses:
+        '200':
+          description: ''
+      security:
+        - bearer: []
+      summary: 'Admin: Cập nhật cấu hình liên hệ'
       tags:
         - Admin Catalog
   /api/v1/bookings/quote:
@@ -2356,3 +2384,33 @@ components:
           enum:
             - ACTIVE
             - SUSPENDED
+    UpdateContactSettingsDto:
+      type: object
+      properties:
+        zaloOaId:
+          type: string
+          nullable: true
+          example: '1234567890123456789'
+        zaloPhone:
+          type: string
+          nullable: true
+          example: '0912345678'
+        messengerPage:
+          type: string
+          nullable: true
+          example: borroll.camera
+        instagramHandle:
+          type: string
+          nullable: true
+          example: borroll.camera
+        hotline:
+          type: string
+          nullable: true
+          example: '0912345678'
+        welcomeMessage:
+          type: string
+          nullable: true
+          example: Xin chào! BORROLL có thể hỗ trợ gì cho bạn?
+        isChatEnabled:
+          type: boolean
+          example: true

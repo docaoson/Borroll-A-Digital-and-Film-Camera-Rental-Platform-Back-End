@@ -24,6 +24,10 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { HttpExceptionFilter } from '../../src/common/filters/http-exception.filter';
 import { getTodayVietnamIso } from '../../src/common/utils/date.util';
+import {
+  assertSafeE2eDatabase,
+  cleanupE2eData,
+} from '../../src/common/utils/e2e-cleanup.util';
 import { PrismaService } from '../../src/infra/database/prisma.service';
 import { STORAGE_SERVICE } from '../../src/infra/storage/storage.service';
 import { BookingService } from '../../src/modules/booking';
@@ -75,22 +79,31 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
 
   let branchId = '';
   const branchSlug = `${prefix}-branch`;
+  const inactiveBranchSlug = `${prefix}-branch-inactive`;
   let parentCatId = '';
   let childCatId = '';
   let lensCatId = '';
+  const inactiveCatSlug = `${prefix}-cat-inactive`;
   let brandId = '';
+  const inactiveBrandSlug = `${prefix}-brand-inactive`;
   let model1UnitId = '';
   let model2UnitId = '';
   let inactiveModelId = '';
   let lensWrongMountId = '';
   let unit1Id = '';
-  let unit2aId = '';
-  let unit2bId = '';
   let filmId = '';
+  let inactiveFilmId = '';
+  let initialContactSetting: {
+    zaloOaId: string | null;
+    zaloPhone: string | null;
+    messengerPage: string | null;
+    instagramHandle: string | null;
+    hotline: string | null;
+    welcomeMessage: string | null;
+    isChatEnabled: boolean;
+    updatedBy: string | null;
+  } | null = null;
 
-  let customer1Id = '';
-  let customer2Id = '';
-  let staffId = '';
   let adminId = '';
   let customer1Token = '';
   let customer2Token = '';
@@ -132,6 +145,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
   };
 
   beforeAll(async () => {
+    assertSafeE2eDatabase();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -175,11 +189,11 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
     const pwHash = await argon2.hash('Password123!');
 
     const createTestUser = async (suffix: string, roles: Role[]) => {
-      const email = `store_e2e+${ts}_${suffix}@example.test`;
+      const email = `${prefix}_${suffix}@example.test`;
       const user = await prisma.user.create({
         data: {
           email,
-          fullName: `User ${suffix}`,
+          fullName: `${prefix} User ${suffix}`,
           phone: '0912345678',
           passwordHash: pwHash,
           status: UserStatus.ACTIVE,
@@ -193,53 +207,105 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
       return { id: user.id, token };
     };
 
+    initialContactSetting = await prisma.contactSetting.findUnique({
+      where: { id: 'default' },
+      select: {
+        zaloOaId: true,
+        zaloPhone: true,
+        messengerPage: true,
+        instagramHandle: true,
+        hotline: true,
+        welcomeMessage: true,
+        isChatEnabled: true,
+        updatedBy: true,
+      },
+    });
+
     const [c1, c2, st, ad] = await Promise.all([
       createTestUser('c1', [Role.RENTER]),
       createTestUser('c2', [Role.RENTER]),
       createTestUser('st', [Role.STAFF]),
       createTestUser('ad', [Role.ADMIN]),
     ]);
-    customer1Id = c1.id;
     customer1Token = c1.token;
-    customer2Id = c2.id;
     customer2Token = c2.token;
-    staffId = st.id;
     staffToken = st.token;
     adminId = ad.id;
     adminToken = ad.token;
 
     const branch = await prisma.branch.create({
       data: {
-        name: `Branch ${prefix}`,
+        name: `${prefix} Branch Active`,
         slug: branchSlug,
         address: 'Ha Noi',
         phone: '0900000000',
         openHours: '09:00 - 21:00',
+        isActive: true,
       },
     });
     branchId = branch.id;
 
+    await prisma.branch.create({
+      data: {
+        name: `${prefix} Branch Inactive`,
+        slug: inactiveBranchSlug,
+        address: 'Ha Noi',
+        phone: '0900000001',
+        openHours: '09:00 - 21:00',
+        isActive: false,
+      },
+    });
+
     const pCat = await prisma.category.create({
-      data: { name: `Máy ảnh ${prefix}`, slug: `${prefix}-root-cam` },
+      data: {
+        name: `${prefix} Máy ảnh`,
+        slug: `${prefix}-root-cam`,
+        isActive: true,
+      },
     });
     parentCatId = pCat.id;
     const cCat = await prisma.category.create({
       data: {
-        name: `Film SLR ${prefix}`,
+        name: `${prefix} Film SLR`,
         slug: `${prefix}-film-slr`,
         parentId: parentCatId,
+        isActive: true,
       },
     });
     childCatId = cCat.id;
     const lCat = await prisma.category.create({
-      data: { name: `Ống kính ${prefix}`, slug: `${prefix}-lens` },
+      data: {
+        name: `${prefix} Ống kính`,
+        slug: `${prefix}-lens`,
+        isActive: true,
+      },
     });
     lensCatId = lCat.id;
 
+    await prisma.category.create({
+      data: {
+        name: `${prefix} Danh mục ẩn`,
+        slug: inactiveCatSlug,
+        isActive: false,
+      },
+    });
+
     const brand = await prisma.brand.create({
-      data: { name: `Fujifilm ${prefix}`, slug: `${prefix}-fuji` },
+      data: {
+        name: `${prefix} Fujifilm`,
+        slug: `${prefix}-fuji`,
+        isActive: true,
+      },
     });
     brandId = brand.id;
+
+    await prisma.brand.create({
+      data: {
+        name: `${prefix} Hãng ẩn`,
+        slug: inactiveBrandSlug,
+        isActive: false,
+      },
+    });
 
     const m1 = await prisma.rentalModel.create({
       data: {
@@ -248,7 +314,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         categoryId: childCatId,
         brandId,
         slug: `${prefix}-m1`,
-        name: `Máy ảnh Fuji ${prefix} Single`,
+        name: `${prefix} Máy ảnh Fuji Single`,
         description: 'Single unit model',
         mount: 'X',
         pricePerDay: 200000,
@@ -265,7 +331,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         categoryId: childCatId,
         brandId,
         slug: `${prefix}-m2`,
-        name: `Máy ảnh Fuji ${prefix} Double`,
+        name: `${prefix} Máy ảnh Fuji Double`,
         description: 'Two unit model',
         mount: 'E',
         pricePerDay: 350000,
@@ -282,7 +348,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         categoryId: childCatId,
         brandId,
         slug: `${prefix}-hidden`,
-        name: `Hidden ${prefix}`,
+        name: `${prefix} Hidden`,
         description: 'Hidden',
         isActive: false,
         pricePerDay: 100000,
@@ -297,7 +363,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         categoryId: lensCatId,
         brandId,
         slug: `${prefix}-lens-rf`,
-        name: `Lens RF ${prefix}`,
+        name: `${prefix} Lens RF`,
         description: 'RF Lens',
         mount: 'RF',
         pricePerDay: 150000,
@@ -316,7 +382,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
     });
     unit1Id = u1.id;
 
-    const u2a = await prisma.rentalUnit.create({
+    await prisma.rentalUnit.create({
       data: {
         modelId: model2UnitId,
         branchId,
@@ -324,9 +390,8 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         status: UnitStatus.AVAILABLE,
       },
     });
-    unit2aId = u2a.id;
 
-    const u2b = await prisma.rentalUnit.create({
+    await prisma.rentalUnit.create({
       data: {
         modelId: model2UnitId,
         branchId,
@@ -334,47 +399,54 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         status: UnitStatus.AVAILABLE,
       },
     });
-    unit2bId = u2b.id;
 
     const film = await prisma.filmProduct.create({
       data: {
-        name: `Kodak ${prefix}`,
+        name: `${prefix} Kodak Gold`,
         iso: 200,
         format: '35mm',
         price: 180000,
         inStock: true,
+        isActive: true,
       },
     });
     filmId = film.id;
+
+    const inactiveFilm = await prisma.filmProduct.create({
+      data: {
+        name: `${prefix} Kodak Inactive`,
+        iso: 400,
+        format: '35mm',
+        price: 220000,
+        inStock: true,
+        isActive: false,
+      },
+    });
+    inactiveFilmId = inactiveFilm.id;
   });
 
   afterAll(async () => {
-    await prisma.booking.deleteMany({
-      where: { userId: { in: [customer1Id, customer2Id] } },
-    });
-    await prisma.unitBlock.deleteMany({
-      where: { unitId: { in: [unit1Id, unit2aId, unit2bId] } },
-    });
-    await prisma.rentalUnit.deleteMany({
-      where: { id: { in: [unit1Id, unit2aId, unit2bId] } },
-    });
-    await prisma.rentalModel.deleteMany({
-      where: {
-        id: {
-          in: [model1UnitId, model2UnitId, inactiveModelId, lensWrongMountId],
-        },
-      },
-    });
-    await prisma.filmProduct.deleteMany({ where: { id: filmId } });
-    await prisma.category.deleteMany({
-      where: { id: { in: [childCatId, lensCatId, parentCatId] } },
-    });
-    await prisma.brand.deleteMany({ where: { id: brandId } });
-    await prisma.branch.deleteMany({ where: { id: branchId } });
-    await prisma.user.deleteMany({
-      where: { id: { in: [customer1Id, customer2Id, staffId, adminId] } },
-    });
-    await app.close();
+    try {
+      if (prisma) {
+        if (initialContactSetting) {
+          await prisma.contactSetting.upsert({
+            where: { id: 'default' },
+            update: {
+              ...initialContactSetting,
+            },
+            create: {
+              id: 'default',
+              ...initialContactSetting,
+            },
+          });
+        }
+        await cleanupE2eData(prisma, { prefix });
+      }
+    } finally {
+      if (app) {
+        await app.close();
+      }
+    }
   });
 
   it('calculates pricing (1d, 3d, 7d, 8d weekly rate + addons) and validates quote vs booking', async () => {
@@ -445,7 +517,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
           endDate: end,
           items: [{ modelId: model1UnitId }],
           addons: [],
-          contactName: 'C1',
+          contactName: `${prefix} C1`,
           contactPhone: '0912345678',
         }),
       request(httpServer)
@@ -457,7 +529,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
           endDate: end,
           items: [{ modelId: model1UnitId }],
           addons: [],
-          contactName: 'C2',
+          contactName: `${prefix} C2`,
           contactPhone: '0912345679',
         }),
     ]);
@@ -475,7 +547,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         endDate: addDaysIso(end, 2),
         items: [{ modelId: model1UnitId }],
         addons: [],
-        contactName: 'C2 Adj',
+        contactName: `${prefix} C2 Adj`,
         contactPhone: '0912345679',
       })
       .expect(201);
@@ -492,7 +564,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
           endDate: end,
           items: [{ modelId: model2UnitId }],
           addons: [],
-          contactName: 'D1',
+          contactName: `${prefix} D1`,
           contactPhone: '0912345678',
         }),
       request(httpServer)
@@ -504,7 +576,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
           endDate: end,
           items: [{ modelId: model2UnitId }],
           addons: [],
-          contactName: 'D2',
+          contactName: `${prefix} D2`,
           contactPhone: '0912345679',
         }),
       request(httpServer)
@@ -516,7 +588,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
           endDate: end,
           items: [{ modelId: model2UnitId }],
           addons: [],
-          contactName: 'D3',
+          contactName: `${prefix} D3`,
           contactPhone: '0912345678',
         }),
     ]);
@@ -538,7 +610,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         endDate: end,
         items: [{ modelId: model1UnitId }],
         addons: [{ filmProductId: filmId, quantity: 1 }],
-        contactName: 'Customer One',
+        contactName: `${prefix} Customer One`,
         contactPhone: '0912345678',
       })
       .expect(201);
@@ -718,7 +790,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         endDate: end,
         items: [{ modelId: model1UnitId }],
         addons: [],
-        contactName: 'Customer Two',
+        contactName: `${prefix} Customer Two`,
         contactPhone: '0912345679',
       })
       .expect(201);
@@ -738,7 +810,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
           endDate: end,
           items: [{ modelId: model1UnitId }],
           addons: [],
-          contactName: 'Race User',
+          contactName: `${prefix} Race User`,
           contactPhone: '0912345678',
         }),
       request(httpServer)
@@ -748,7 +820,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
           unitId: unit1Id,
           startDate: start,
           endDate: end,
-          reason: 'Bảo trì race test',
+          reason: `${prefix} Bảo trì race test`,
         }),
     ]);
 
@@ -766,7 +838,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
 
     const searchBody = searchRes.body as ModelsBody;
     const names = searchBody.items.map((i) => i.name);
-    expect(names).toContain(`Máy ảnh Fuji ${prefix} Single`);
+    expect(names).toContain(`${prefix} Máy ảnh Fuji Single`);
     expect(searchBody.facets.price.length).toBe(4);
 
     // Expire pending booking test
@@ -781,7 +853,7 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
         endDate: end,
         items: [{ modelId: model1UnitId }],
         addons: [],
-        contactName: 'Expire Test',
+        contactName: `${prefix} Expire Test`,
         contactPhone: '0912345678',
       })
       .expect(201);
@@ -806,5 +878,193 @@ describe('Store Operations, Catalog, Inventory & Booking (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ roles: [Role.STAFF] })
       .expect(400);
+  });
+
+  it('returns only active (is_active = true) records for GET /branches, /categories, /brands, and /film-products', async () => {
+    const [branchesRes, categoriesRes, brandsRes, filmsRes] = await Promise.all(
+      [
+        request(httpServer).get('/api/v1/branches').expect(200),
+        request(httpServer).get('/api/v1/categories').expect(200),
+        request(httpServer).get('/api/v1/brands').expect(200),
+        request(httpServer).get('/api/v1/film-products').expect(200),
+      ],
+    );
+
+    const branchSlugs = (
+      branchesRes.body as { items: Array<{ slug: string }> }
+    ).items.map((b) => b.slug);
+    expect(branchSlugs).toContain(branchSlug);
+    expect(branchSlugs).not.toContain(inactiveBranchSlug);
+
+    const flattenCategorySlugs = (
+      nodes: Array<{ slug: string; children?: Array<{ slug: string }> }>,
+    ): string[] =>
+      nodes.flatMap((n) => [
+        n.slug,
+        ...(n.children ? flattenCategorySlugs(n.children) : []),
+      ]);
+    const categorySlugs = flattenCategorySlugs(
+      (
+        categoriesRes.body as {
+          items: Array<{ slug: string; children?: Array<{ slug: string }> }>;
+        }
+      ).items,
+    );
+    expect(categorySlugs).toContain(`${prefix}-root-cam`);
+    expect(categorySlugs).toContain(`${prefix}-film-slr`);
+    expect(categorySlugs).not.toContain(inactiveCatSlug);
+
+    const brandSlugs = (
+      brandsRes.body as { items: Array<{ slug: string }> }
+    ).items.map((b) => b.slug);
+    expect(brandSlugs).toContain(`${prefix}-fuji`);
+    expect(brandSlugs).not.toContain(inactiveBrandSlug);
+
+    const filmIds = (
+      filmsRes.body as { items: Array<{ id: string }> }
+    ).items.map((f) => f.id);
+    expect(filmIds).toContain(filmId);
+    expect(filmIds).not.toContain(inactiveFilmId);
+  });
+
+  it('enforces RBAC, URL/script validation, cache invalidation, and null handling on contact-settings', async () => {
+    const validPayload = {
+      zaloOaId: '123456789012345',
+      zaloPhone: '0912345678',
+      messengerPage: 'borroll.camera',
+      instagramHandle: 'borroll.camera',
+      hotline: '0912345678',
+      welcomeMessage: 'Xin chào! BORROLL hỗ trợ thuê máy ảnh.',
+      isChatEnabled: true,
+    };
+
+    // Guest (unauthenticated) => 401
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .send(validPayload)
+      .expect(401);
+
+    // Renter => 403
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${customer1Token}`)
+      .send(validPayload)
+      .expect(403);
+
+    // Staff => 403
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send(validPayload)
+      .expect(403);
+
+    // Reject URL in input => 400
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        ...validPayload,
+        messengerPage: 'https://m.me/borroll.camera',
+      })
+      .expect(400);
+
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        ...validPayload,
+        zaloPhone: 'https://zalo.me/0912345678',
+      })
+      .expect(400);
+
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        ...validPayload,
+        welcomeMessage: 'Truy cập https://evil.example.com ngay',
+      })
+      .expect(400);
+
+    // Reject HTML / script characters => 400
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        ...validPayload,
+        welcomeMessage: '<script>alert("xss")</script>',
+      })
+      .expect(400);
+
+    // Admin valid PUT => 200 and GET reflects immediately
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(validPayload)
+      .expect(200);
+
+    const getRes = await request(httpServer)
+      .get('/api/v1/contact-settings')
+      .expect(200);
+
+    const getBody = getRes.body as {
+      chatEnabled: boolean;
+      welcomeMessage: string | null;
+      zalo: { oaId: string | null; url: string | null };
+      messenger: { url: string | null };
+      instagram: { handle: string | null; url: string | null };
+      hotline: string | null;
+      branches: Array<{ slug: string; name: string; phone: string }>;
+    };
+
+    expect(getBody.chatEnabled).toBe(true);
+    expect(getBody.welcomeMessage).toBe(
+      'Xin chào! BORROLL hỗ trợ thuê máy ảnh.',
+    );
+    expect(getBody.zalo).toEqual({
+      oaId: '123456789012345',
+      url: 'https://zalo.me/0912345678',
+    });
+    expect(getBody.messenger).toEqual({
+      url: 'https://m.me/borroll.camera',
+    });
+    expect(getBody.instagram).toEqual({
+      handle: 'borroll.camera',
+      url: 'https://instagram.com/borroll.camera',
+    });
+    expect(getBody.hotline).toBe('0912345678');
+    expect(Array.isArray(getBody.branches)).toBe(true);
+    expect(
+      getBody.branches.some(
+        (b) => b.slug === branchSlug && b.phone === '0900000000',
+      ),
+    ).toBe(true);
+
+    // Null fields return null
+    await request(httpServer)
+      .put('/api/v1/admin/contact-settings')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        zaloOaId: null,
+        zaloPhone: null,
+        messengerPage: null,
+        instagramHandle: null,
+        hotline: null,
+        welcomeMessage: null,
+        isChatEnabled: false,
+      })
+      .expect(200);
+
+    const nullRes = await request(httpServer)
+      .get('/api/v1/contact-settings')
+      .expect(200);
+
+    const nullBody = nullRes.body as typeof getBody;
+    expect(nullBody.chatEnabled).toBe(false);
+    expect(nullBody.welcomeMessage).toBeNull();
+    expect(nullBody.zalo).toEqual({ oaId: null, url: null });
+    expect(nullBody.messenger).toEqual({ url: null });
+    expect(nullBody.instagram).toEqual({ handle: null, url: null });
+    expect(nullBody.hotline).toBeNull();
   });
 });

@@ -448,6 +448,22 @@ async function main() {
     }
   }
 
+  // 7. Contact Settings (single row, default id = 'default')
+  await prisma.contactSetting.upsert({
+    where: { id: 'default' },
+    update: {},
+    create: {
+      id: 'default',
+      zaloOaId: null,
+      zaloPhone: null,
+      messengerPage: null,
+      hotline: null,
+      welcomeMessage: null,
+      isChatEnabled: false,
+      updatedBy: null,
+    },
+  });
+
   console.log('Seeding Borroll store data completed successfully.');
 }
 

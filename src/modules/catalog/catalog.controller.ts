@@ -33,6 +33,13 @@ export class CatalogController {
   }
 
   @Public()
+  @Get('contact-settings')
+  @ApiOperation({ summary: 'Cấu hình liên hệ công khai & danh sách chi nhánh' })
+  getContactSettings() {
+    return this.catalogService.getPublicContactSettings();
+  }
+
+  @Public()
   @Get('categories')
   @ApiOperation({ summary: 'Cây danh mục thiết bị' })
   getCategories() {

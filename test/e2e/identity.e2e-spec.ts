@@ -16,6 +16,10 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { Roles } from '../../src/common/decorators/roles.decorator';
 import { HttpExceptionFilter } from '../../src/common/filters/http-exception.filter';
+import {
+  assertSafeE2eDatabase,
+  cleanupE2eData,
+} from '../../src/common/utils/e2e-cleanup.util';
 import { PrismaService } from '../../src/infra/database/prisma.service';
 import {
   generateVietnameseImeCandidates,
@@ -74,9 +78,10 @@ describe('Identity Module (e2e)', () => {
   let configService: ConfigService;
 
   const ts = Date.now();
-  const testUser1Email = `test+${ts}_1@example.test`;
-  const testUser2Email = `test+${ts}_2@example.test`;
-  const testSuspendedEmail = `test+${ts}_suspended@example.test`;
+  const prefix = `e2e_identity_${ts}`;
+  const testUser1Email = `${prefix}_1@example.test`;
+  const testUser2Email = `${prefix}_2@example.test`;
+  const testSuspendedEmail = `${prefix}_suspended@example.test`;
   const password = 'Password123!';
 
   const extractSetCookies = (res: request.Response): string[] => {
@@ -87,6 +92,7 @@ describe('Identity Module (e2e)', () => {
   };
 
   beforeAll(async () => {
+    assertSafeE2eDatabase();
     jest.setTimeout(30000);
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -135,16 +141,15 @@ describe('Identity Module (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.user.deleteMany({
-      where: {
-        email: {
-          startsWith: 'test+',
-          endsWith: '@example.test',
-        },
-      },
-    });
-
-    await app.close();
+    try {
+      if (prisma) {
+        await cleanupE2eData(prisma, { prefix });
+      }
+    } finally {
+      if (app) {
+        await app.close();
+      }
+    }
   });
 
   describe('Registration & Duplicate Email', () => {
@@ -152,7 +157,7 @@ describe('Identity Module (e2e)', () => {
       const res = await request(httpServer)
         .post('/api/v1/auth/register')
         .send({
-          fullName: 'Test User One',
+          fullName: `${prefix} Test User One`,
           email: testUser1Email,
           phone: '0912345678',
           password,
@@ -163,7 +168,7 @@ describe('Identity Module (e2e)', () => {
       expect(body).toHaveProperty('accessToken');
       expect(body.user).toMatchObject({
         email: testUser1Email,
-        fullName: 'Test User One',
+        fullName: `${prefix} Test User One`,
         roles: ['RENTER'],
       });
 
@@ -179,7 +184,7 @@ describe('Identity Module (e2e)', () => {
       const res = await request(httpServer)
         .post('/api/v1/auth/register')
         .send({
-          fullName: 'Duplicate User',
+          fullName: `${prefix} Duplicate User`,
           email: testUser1Email,
           phone: '0987654321',
           password,
@@ -222,7 +227,7 @@ describe('Identity Module (e2e)', () => {
       await request(httpServer)
         .post('/api/v1/auth/register')
         .send({
-          fullName: 'Suspended User',
+          fullName: `${prefix} Suspended User`,
           email: testSuspendedEmail,
           phone: '0911112222',
           password,
@@ -428,7 +433,7 @@ describe('Identity Module (e2e)', () => {
       const reg2 = await request(httpServer)
         .post('/api/v1/auth/register')
         .send({
-          fullName: 'Test User Two',
+          fullName: `${prefix} Test User Two`,
           email: testUser2Email,
           phone: '0988776655',
           password,
@@ -441,14 +446,14 @@ describe('Identity Module (e2e)', () => {
         .patch('/api/v1/me')
         .set('Authorization', `Bearer ${token2}`)
         .send({
-          fullName: 'User Two Updated',
+          fullName: `${prefix} User Two Updated`,
           phone: '0911223344',
         })
         .expect(200);
 
       const me2 = patchRes.body as MeBody & Record<string, unknown>;
       expect(me2).toMatchObject({
-        fullName: 'User Two Updated',
+        fullName: `${prefix} User Two Updated`,
         phone: '0911223344',
         email: testUser2Email,
       });
@@ -494,7 +499,7 @@ describe('Identity Module (e2e)', () => {
         .set('Authorization', `Bearer ${refreshedToken1}`)
         .expect(200);
 
-      expect((getMe1.body as MeBody).fullName).toBe('Test User One');
+      expect((getMe1.body as MeBody).fullName).toBe(`${prefix} Test User One`);
       expect((getMe1.body as MeBody).email).toBe(testUser1Email);
     });
   });
