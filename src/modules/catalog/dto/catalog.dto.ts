@@ -48,18 +48,20 @@ export class ListModelsQueryDto {
   @IsString()
   mount?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Giá thuê tối thiểu (VNĐ), tối đa 100.000.000' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100_000_000, { message: 'Giá lọc tối thiểu không được vượt quá 100.000.000₫' })
   minPrice?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Giá thuê tối đa (VNĐ), tối đa 100.000.000' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(100_000_000, { message: 'Giá lọc tối đa không được vượt quá 100.000.000₫' })
   maxPrice?: number;
 
   @ApiPropertyOptional()

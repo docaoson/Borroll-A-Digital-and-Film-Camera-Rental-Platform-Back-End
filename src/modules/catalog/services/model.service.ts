@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -161,10 +162,32 @@ export class ModelService {
       .map((s) => s.trim())
       .filter(Boolean);
 
+    // Validate price range bounds
+    if (
+      query.minPrice !== undefined &&
+      query.maxPrice !== undefined &&
+      query.minPrice > query.maxPrice
+    ) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Khoảng giá không hợp lệ: Giá tối thiểu không được lớn hơn giá tối đa.',
+        details: { minPrice: query.minPrice, maxPrice: query.maxPrice },
+      });
+    }
+
     const hasDateRange = Boolean(query.from && query.to);
     const activeBranchFilter = query.branch?.trim() || undefined;
 
     const baseWhere: Prisma.RentalModelWhereInput = { isActive: true };
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      baseWhere.pricePerDay = {};
+      if (query.minPrice !== undefined) {
+        baseWhere.pricePerDay.gte = query.minPrice;
+      }
+      if (query.maxPrice !== undefined) {
+        baseWhere.pricePerDay.lte = query.maxPrice;
+      }
+    }
     if (qMatchedIds !== null) {
       baseWhere.id = { in: qMatchedIds };
     }
