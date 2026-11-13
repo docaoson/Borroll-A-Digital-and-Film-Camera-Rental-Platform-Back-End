@@ -5,7 +5,7 @@ import * as readline from 'readline';
 import {
   cleanupE2eData,
   countE2eData,
-} from '../src/common/utils/e2e-cleanup.util';
+} from '../test/helpers/e2e-cleanup.util';
 
 function loadEnvSilently(): void {
   const envPath = path.resolve(process.cwd(), '.env');

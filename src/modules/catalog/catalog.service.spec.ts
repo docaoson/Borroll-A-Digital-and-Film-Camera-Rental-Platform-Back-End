@@ -1,10 +1,19 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { assertSafeE2eDatabase } from '../../common/utils/e2e-cleanup.util';
+import { assertSafeE2eDatabase } from '../../../test/helpers/e2e-cleanup.util';
 import { PrismaService } from '../../infra/database/prisma.service';
 import { StorageService } from '../../infra/storage/storage.service';
 import { InventoryService } from '../inventory';
 import { CatalogService } from './catalog.service';
+import {
+  BranchService,
+  BrandService,
+  CategoryService,
+  ContactSettingsService,
+  FavoriteService,
+  FilmProductService,
+  ModelService,
+} from './services';
 
 describe('CatalogService - Contact Settings & Active Public Filters', () => {
   let service: CatalogService;
@@ -103,11 +112,27 @@ describe('CatalogService - Contact Settings & Active Public Filters', () => {
         .mockImplementation((cb: (tx: unknown) => unknown) => cb(mockPrisma)),
     };
 
+    const prismaService = mockPrisma as unknown as PrismaService;
+    const configService = { get: jest.fn() } as unknown as ConfigService;
+    const storageService = {} as unknown as StorageService;
+    const inventoryService = {} as unknown as InventoryService;
+
+    const branchService = new BranchService(prismaService);
+    const categoryService = new CategoryService(prismaService);
+    const brandService = new BrandService(prismaService);
+    const filmProductService = new FilmProductService(prismaService, configService, storageService);
+    const contactSettingsService = new ContactSettingsService(prismaService);
+    const favoriteService = new FavoriteService(prismaService, configService, storageService);
+    const modelService = new ModelService(prismaService, configService, inventoryService, storageService);
+
     service = new CatalogService(
-      mockPrisma as unknown as PrismaService,
-      { get: jest.fn() } as unknown as ConfigService,
-      {} as unknown as InventoryService,
-      {} as unknown as StorageService,
+      branchService,
+      categoryService,
+      brandService,
+      filmProductService,
+      contactSettingsService,
+      favoriteService,
+      modelService,
     );
   });
 
