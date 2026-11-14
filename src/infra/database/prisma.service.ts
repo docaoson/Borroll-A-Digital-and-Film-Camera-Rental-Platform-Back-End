@@ -51,13 +51,19 @@ export class PrismaService
     this.supabaseProjectRef = databaseUrlRef || supabaseUrlRef || null;
   }
 
-  async onModuleInit() {
-    await this.$connect();
-    if (this.supabaseProjectRef) {
-      this.logger.log(
-        `Connected to Supabase PostgreSQL project: ${this.supabaseProjectRef}`,
-      );
-    }
+  onModuleInit() {
+    this.$connect()
+      .then(() => {
+        if (this.supabaseProjectRef) {
+          this.logger.log(
+            `Connected to Supabase PostgreSQL project: ${this.supabaseProjectRef}`,
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Initial DB connect deferred: ${msg}`);
+      });
   }
 
   async onModuleDestroy() {

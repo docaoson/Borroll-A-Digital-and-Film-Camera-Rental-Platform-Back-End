@@ -8,9 +8,11 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
@@ -28,7 +30,10 @@ export class CatalogController {
 
   @Public()
   @Get('branches')
-  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
+  @Header(
+    'Cache-Control',
+    'public, max-age=120, s-maxage=300, stale-while-revalidate=600',
+  )
   @ApiOperation({ summary: 'Danh sách chi nhánh đang hoạt động' })
   getBranches() {
     return this.catalogService.getPublicBranches();
@@ -36,7 +41,10 @@ export class CatalogController {
 
   @Public()
   @Get('contact-settings')
-  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
+  @Header(
+    'Cache-Control',
+    'public, max-age=120, s-maxage=300, stale-while-revalidate=600',
+  )
   @ApiOperation({ summary: 'Cấu hình liên hệ công khai & danh sách chi nhánh' })
   getContactSettings() {
     return this.catalogService.getPublicContactSettings();
@@ -44,7 +52,10 @@ export class CatalogController {
 
   @Public()
   @Get('categories')
-  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
+  @Header(
+    'Cache-Control',
+    'public, max-age=120, s-maxage=300, stale-while-revalidate=600',
+  )
   @ApiOperation({ summary: 'Cây danh mục thiết bị' })
   getCategories() {
     return this.catalogService.getPublicCategories();
@@ -52,7 +63,10 @@ export class CatalogController {
 
   @Public()
   @Get('brands')
-  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
+  @Header(
+    'Cache-Control',
+    'public, max-age=120, s-maxage=300, stale-while-revalidate=600',
+  )
   @ApiOperation({ summary: 'Danh sách thương hiệu' })
   getBrands() {
     return this.catalogService.getPublicBrands();
@@ -60,7 +74,10 @@ export class CatalogController {
 
   @Public()
   @Get('film-products')
-  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
+  @Header(
+    'Cache-Control',
+    'public, max-age=120, s-maxage=300, stale-while-revalidate=600',
+  )
   @ApiOperation({ summary: 'Danh sách film bán kèm' })
   getFilmProducts() {
     return this.catalogService.getPublicFilmProducts();
@@ -73,13 +90,28 @@ export class CatalogController {
   listModels(
     @Query() query: ListModelsQueryDto,
     @CurrentUser('userId') userId?: string,
+    @Res({ passthrough: true }) res?: Response,
   ) {
+    if (res) {
+      res.setHeader('Vary', 'Authorization');
+      if (userId) {
+        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+      } else {
+        res.setHeader(
+          'Cache-Control',
+          'public, max-age=60, s-maxage=180, stale-while-revalidate=600',
+        );
+      }
+    }
     return this.catalogService.listPublicModels(query, userId);
   }
 
   @Public()
   @Get('models/:id/availability')
-  @Header('Cache-Control', 'public, max-age=30, stale-while-revalidate=60')
+  @Header(
+    'Cache-Control',
+    'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+  )
   @ApiOperation({ summary: 'Lịch ngày hết máy theo tháng và chi nhánh' })
   getModelAvailability(
     @Param('id') id: string,
@@ -95,7 +127,19 @@ export class CatalogController {
   getModelBySlug(
     @Param('slug') slug: string,
     @CurrentUser('userId') userId?: string,
+    @Res({ passthrough: true }) res?: Response,
   ) {
+    if (res) {
+      res.setHeader('Vary', 'Authorization');
+      if (userId) {
+        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+      } else {
+        res.setHeader(
+          'Cache-Control',
+          'public, max-age=60, s-maxage=180, stale-while-revalidate=600',
+        );
+      }
+    }
     return this.catalogService.getPublicModelBySlug(slug, userId);
   }
 
