@@ -27,6 +27,7 @@ import {
 import {
   assertValidBookingTransition,
   BOOKING_INCLUDE_DETAIL,
+  BOOKING_INCLUDE_SUMMARY,
   BookingService,
 } from '../booking';
 import {
@@ -83,7 +84,7 @@ export class OperationsService {
             status: BookingStatus.CONFIRMED,
             startDate: todayDate,
           },
-          include: BOOKING_INCLUDE_DETAIL,
+          include: BOOKING_INCLUDE_SUMMARY,
           orderBy: [{ createdAt: 'asc' }],
         }),
         this.prisma.booking.findMany({
@@ -92,7 +93,7 @@ export class OperationsService {
             status: BookingStatus.PICKED_UP,
             endDate: todayDate,
           },
-          include: BOOKING_INCLUDE_DETAIL,
+          include: BOOKING_INCLUDE_SUMMARY,
           orderBy: [{ createdAt: 'asc' }],
         }),
         this.prisma.booking.findMany({
@@ -101,7 +102,7 @@ export class OperationsService {
             status: BookingStatus.PICKED_UP,
             endDate: { lt: todayDate },
           },
-          include: BOOKING_INCLUDE_DETAIL,
+          include: BOOKING_INCLUDE_SUMMARY,
           orderBy: [{ endDate: 'asc' }],
         }),
       ]);
@@ -162,7 +163,7 @@ export class OperationsService {
     const [items, total] = await Promise.all([
       this.prisma.booking.findMany({
         where,
-        include: BOOKING_INCLUDE_DETAIL,
+        include: BOOKING_INCLUDE_SUMMARY,
         orderBy: [{ createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -209,22 +210,23 @@ export class OperationsService {
         include: BOOKING_INCLUDE_DETAIL,
       });
 
-      await tx.bookingStatusLog.create({
-        data: {
-          bookingId,
-          fromStatus: existing.status,
-          toStatus: BookingStatus.CONFIRMED,
+      await Promise.all([
+        tx.bookingStatusLog.create({
+          data: {
+            bookingId,
+            fromStatus: existing.status,
+            toStatus: BookingStatus.CONFIRMED,
+            actorId,
+            note: 'Nhân viên xác nhận đơn',
+          },
+        }),
+        writeAuditLog(tx, {
           actorId,
-          note: 'Nhân viên xác nhận đơn',
-        },
-      });
-
-      await writeAuditLog(tx, {
-        actorId,
-        action: 'BOOKING_CONFIRMED',
-        targetType: 'BOOKING',
-        targetId: bookingId,
-      });
+          action: 'BOOKING_CONFIRMED',
+          targetType: 'BOOKING',
+          targetId: bookingId,
+        }),
+      ]);
 
       return booking;
     });
@@ -263,28 +265,28 @@ export class OperationsService {
         include: BOOKING_INCLUDE_DETAIL,
       });
 
-      await tx.bookingUnit.updateMany({
-        where: { bookingId },
-        data: { active: false },
-      });
-
-      await tx.bookingStatusLog.create({
-        data: {
-          bookingId,
-          fromStatus: existing.status,
-          toStatus: BookingStatus.REJECTED,
+      await Promise.all([
+        tx.bookingUnit.updateMany({
+          where: { bookingId },
+          data: { active: false },
+        }),
+        tx.bookingStatusLog.create({
+          data: {
+            bookingId,
+            fromStatus: existing.status,
+            toStatus: BookingStatus.REJECTED,
+            actorId,
+            note: reason,
+          },
+        }),
+        writeAuditLog(tx, {
           actorId,
-          note: reason,
-        },
-      });
-
-      await writeAuditLog(tx, {
-        actorId,
-        action: 'BOOKING_REJECTED',
-        targetType: 'BOOKING',
-        targetId: bookingId,
-        metadata: { reason },
-      });
+          action: 'BOOKING_REJECTED',
+          targetType: 'BOOKING',
+          targetId: bookingId,
+          metadata: { reason },
+        }),
+      ]);
 
       return booking;
     });
@@ -323,28 +325,28 @@ export class OperationsService {
         include: BOOKING_INCLUDE_DETAIL,
       });
 
-      await tx.bookingUnit.updateMany({
-        where: { bookingId },
-        data: { active: false },
-      });
-
-      await tx.bookingStatusLog.create({
-        data: {
-          bookingId,
-          fromStatus: existing.status,
-          toStatus: BookingStatus.CANCELLED,
+      await Promise.all([
+        tx.bookingUnit.updateMany({
+          where: { bookingId },
+          data: { active: false },
+        }),
+        tx.bookingStatusLog.create({
+          data: {
+            bookingId,
+            fromStatus: existing.status,
+            toStatus: BookingStatus.CANCELLED,
+            actorId,
+            note: reason,
+          },
+        }),
+        writeAuditLog(tx, {
           actorId,
-          note: reason,
-        },
-      });
-
-      await writeAuditLog(tx, {
-        actorId,
-        action: 'BOOKING_CANCELLED_BY_STAFF',
-        targetType: 'BOOKING',
-        targetId: bookingId,
-        metadata: { fromStatus: existing.status, reason },
-      });
+          action: 'BOOKING_CANCELLED_BY_STAFF',
+          targetType: 'BOOKING',
+          targetId: bookingId,
+          metadata: { fromStatus: existing.status, reason },
+        }),
+      ]);
 
       return booking;
     });
@@ -435,7 +437,52 @@ export class OperationsService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const booking = await tx.booking.update({
+      const positivePayments = dto.payments.filter((p) => p.amount > 0);
+      await Promise.all([
+        tx.handoverRecord.create({
+          data: {
+            bookingId,
+            kind: HandoverKind.PICKUP,
+            checklist: dto.checklist as unknown as Prisma.InputJsonValue,
+            conditionNotes: dto.conditionNotes?.trim() || null,
+            photoPaths: dto.photoPaths,
+            idChecked: true,
+            recordedBy: actorId,
+          },
+        }),
+        ...(positivePayments.length > 0
+          ? [
+              tx.paymentRecord.createMany({
+                data: positivePayments.map((payment) => ({
+                  bookingId,
+                  type: payment.type,
+                  amount: payment.amount,
+                  method: payment.method,
+                  note: payment.note?.trim() || null,
+                  recordedBy: actorId,
+                })),
+              }),
+            ]
+          : []),
+        tx.bookingStatusLog.create({
+          data: {
+            bookingId,
+            fromStatus: existing.status,
+            toStatus: BookingStatus.PICKED_UP,
+            actorId,
+            note: 'Giao máy cho khách',
+          },
+        }),
+        writeAuditLog(tx, {
+          actorId,
+          action: 'BOOKING_PICKED_UP',
+          targetType: 'BOOKING',
+          targetId: bookingId,
+          metadata: { depositReceived, rentalReceived },
+        }),
+      ]);
+
+      return tx.booking.update({
         where: { id: bookingId },
         data: {
           status: BookingStatus.PICKED_UP,
@@ -443,53 +490,6 @@ export class OperationsService {
         },
         include: BOOKING_INCLUDE_DETAIL,
       });
-
-      await tx.handoverRecord.create({
-        data: {
-          bookingId,
-          kind: HandoverKind.PICKUP,
-          checklist: dto.checklist as unknown as Prisma.InputJsonValue,
-          conditionNotes: dto.conditionNotes?.trim() || null,
-          photoPaths: dto.photoPaths,
-          idChecked: true,
-          recordedBy: actorId,
-        },
-      });
-
-      for (const payment of dto.payments) {
-        if (payment.amount > 0) {
-          await tx.paymentRecord.create({
-            data: {
-              bookingId,
-              type: payment.type,
-              amount: payment.amount,
-              method: payment.method,
-              note: payment.note?.trim() || null,
-              recordedBy: actorId,
-            },
-          });
-        }
-      }
-
-      await tx.bookingStatusLog.create({
-        data: {
-          bookingId,
-          fromStatus: existing.status,
-          toStatus: BookingStatus.PICKED_UP,
-          actorId,
-          note: 'Giao máy cho khách',
-        },
-      });
-
-      await writeAuditLog(tx, {
-        actorId,
-        action: 'BOOKING_PICKED_UP',
-        targetType: 'BOOKING',
-        targetId: bookingId,
-        metadata: { depositReceived, rentalReceived },
-      });
-
-      return booking;
     });
 
     this.eventEmitter.emit('booking.picked_up', { bookingId, actorId });
@@ -526,7 +526,36 @@ export class OperationsService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const booking = await tx.booking.update({
+      await Promise.all([
+        tx.handoverRecord.create({
+          data: {
+            bookingId,
+            kind: HandoverKind.RETURN,
+            checklist: dto.checklist as unknown as Prisma.InputJsonValue,
+            conditionNotes: dto.conditionNotes?.trim() || null,
+            photoPaths: dto.photoPaths,
+            idChecked: true,
+            recordedBy: actorId,
+          },
+        }),
+        tx.bookingStatusLog.create({
+          data: {
+            bookingId,
+            fromStatus: existing.status,
+            toStatus: BookingStatus.RETURNED,
+            actorId,
+            note: 'Khách đã trả máy',
+          },
+        }),
+        writeAuditLog(tx, {
+          actorId,
+          action: 'BOOKING_RETURNED',
+          targetType: 'BOOKING',
+          targetId: bookingId,
+        }),
+      ]);
+
+      return tx.booking.update({
         where: { id: bookingId },
         data: {
           status: BookingStatus.RETURNED,
@@ -534,37 +563,6 @@ export class OperationsService {
         },
         include: BOOKING_INCLUDE_DETAIL,
       });
-
-      await tx.handoverRecord.create({
-        data: {
-          bookingId,
-          kind: HandoverKind.RETURN,
-          checklist: dto.checklist as unknown as Prisma.InputJsonValue,
-          conditionNotes: dto.conditionNotes?.trim() || null,
-          photoPaths: dto.photoPaths,
-          idChecked: true,
-          recordedBy: actorId,
-        },
-      });
-
-      await tx.bookingStatusLog.create({
-        data: {
-          bookingId,
-          fromStatus: existing.status,
-          toStatus: BookingStatus.RETURNED,
-          actorId,
-          note: 'Khách đã trả máy',
-        },
-      });
-
-      await writeAuditLog(tx, {
-        actorId,
-        action: 'BOOKING_RETURNED',
-        targetType: 'BOOKING',
-        targetId: bookingId,
-      });
-
-      return booking;
     });
 
     this.eventEmitter.emit('booking.returned', { bookingId, actorId });
@@ -612,23 +610,18 @@ export class OperationsService {
     const refundAmount = depositCollected - totalCharges;
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      for (const charge of charges) {
-        if (charge.amount > 0) {
-          await tx.paymentRecord.create({
-            data: {
-              bookingId,
-              type: charge.type,
-              amount: charge.amount,
-              method: dto.refundMethod,
-              note: charge.note?.trim() || null,
-              recordedBy: actorId,
-            },
-          });
-        }
-      }
-
-      await tx.paymentRecord.create({
-        data: {
+      const paymentRecordsData = [
+        ...charges
+          .filter((c) => c.amount > 0)
+          .map((charge) => ({
+            bookingId,
+            type: charge.type,
+            amount: charge.amount,
+            method: dto.refundMethod,
+            note: charge.note?.trim() || null,
+            recordedBy: actorId,
+          })),
+        {
           bookingId,
           type: PaymentType.DEPOSIT_REFUNDED,
           amount: refundAmount,
@@ -636,14 +629,33 @@ export class OperationsService {
           note: dto.note?.trim() || null,
           recordedBy: actorId,
         },
-      });
+      ];
 
-      await tx.bookingUnit.updateMany({
-        where: { bookingId },
-        data: { active: false },
-      });
+      await Promise.all([
+        tx.paymentRecord.createMany({ data: paymentRecordsData }),
+        tx.bookingUnit.updateMany({
+          where: { bookingId },
+          data: { active: false },
+        }),
+        tx.bookingStatusLog.create({
+          data: {
+            bookingId,
+            fromStatus: existing.status,
+            toStatus: BookingStatus.COMPLETED,
+            actorId,
+            note: 'Hoàn tất đơn và hoàn cọc',
+          },
+        }),
+        writeAuditLog(tx, {
+          actorId,
+          action: 'BOOKING_COMPLETED',
+          targetType: 'BOOKING',
+          targetId: bookingId,
+          metadata: { depositCollected, totalCharges, refundAmount },
+        }),
+      ]);
 
-      const booking = await tx.booking.update({
+      return tx.booking.update({
         where: { id: bookingId },
         data: {
           status: BookingStatus.COMPLETED,
@@ -651,26 +663,6 @@ export class OperationsService {
         },
         include: BOOKING_INCLUDE_DETAIL,
       });
-
-      await tx.bookingStatusLog.create({
-        data: {
-          bookingId,
-          fromStatus: existing.status,
-          toStatus: BookingStatus.COMPLETED,
-          actorId,
-          note: 'Hoàn tất đơn và hoàn cọc',
-        },
-      });
-
-      await writeAuditLog(tx, {
-        actorId,
-        action: 'BOOKING_COMPLETED',
-        targetType: 'BOOKING',
-        targetId: bookingId,
-        metadata: { depositCollected, totalCharges, refundAmount },
-      });
-
-      return booking;
     });
 
     this.eventEmitter.emit('booking.completed', { bookingId, actorId });

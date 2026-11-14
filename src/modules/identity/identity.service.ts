@@ -168,17 +168,11 @@ export class IdentityService implements OnModuleInit {
     }
 
     const roles = user.roles.map((r) => r.role);
-    const accessToken = await this.generateAccessToken(
-      user.id,
-      roles,
-      user.email,
-    );
     const familyId = crypto.randomUUID();
-    const refreshToken = await this.createRefreshTokenRecord(
-      user.id,
-      familyId,
-      userAgent,
-    );
+    const [accessToken, refreshToken] = await Promise.all([
+      this.generateAccessToken(user.id, roles, user.email),
+      this.createRefreshTokenRecord(user.id, familyId, userAgent),
+    ]);
 
     return {
       accessToken,
@@ -206,12 +200,18 @@ export class IdentityService implements OnModuleInit {
       const emailCandidates = generateVietnameseImeCandidates(email)
         .map((c) => c.toLowerCase())
         .filter((c) => c !== email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c));
-      for (const candidateEmail of emailCandidates) {
-        user = await this.prisma.user.findUnique({
-          where: { email: candidateEmail },
+      if (emailCandidates.length > 0) {
+        const candidates = await this.prisma.user.findMany({
+          where: { email: { in: emailCandidates } },
           include: { roles: true },
         });
-        if (user) break;
+        for (const candidateEmail of emailCandidates) {
+          const found = candidates.find((u) => u.email === candidateEmail);
+          if (found) {
+            user = found;
+            break;
+          }
+        }
       }
     }
 
@@ -248,17 +248,11 @@ export class IdentityService implements OnModuleInit {
     }
 
     const roles = user.roles.map((r) => r.role);
-    const accessToken = await this.generateAccessToken(
-      user.id,
-      roles,
-      user.email,
-    );
     const familyId = crypto.randomUUID();
-    const refreshToken = await this.createRefreshTokenRecord(
-      user.id,
-      familyId,
-      userAgent,
-    );
+    const [accessToken, refreshToken] = await Promise.all([
+      this.generateAccessToken(user.id, roles, user.email),
+      this.createRefreshTokenRecord(user.id, familyId, userAgent),
+    ]);
 
     return {
       accessToken,
@@ -359,16 +353,10 @@ export class IdentityService implements OnModuleInit {
     }
 
     const roles = user.roles.map((r) => r.role);
-    const newAccessToken = await this.generateAccessToken(
-      user.id,
-      roles,
-      user.email,
-    );
-    const newRefreshToken = await this.createRefreshTokenRecord(
-      user.id,
-      tokenRecord.familyId,
-      userAgent,
-    );
+    const [newAccessToken, newRefreshToken] = await Promise.all([
+      this.generateAccessToken(user.id, roles, user.email),
+      this.createRefreshTokenRecord(user.id, tokenRecord.familyId, userAgent),
+    ]);
 
     return {
       accessToken: newAccessToken,
@@ -466,12 +454,20 @@ export class IdentityService implements OnModuleInit {
       }
     }
 
-    await this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data,
+      include: { roles: true },
     });
 
-    return this.getMe(userId);
+    return {
+      id: updated.id,
+      fullName: updated.fullName,
+      email: updated.email,
+      phone: updated.phone,
+      avatarUrl: this.constructAvatarUrl(updated.avatarPath),
+      roles: updated.roles.map((r) => r.role),
+    };
   }
 
   async presignAvatar(

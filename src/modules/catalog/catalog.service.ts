@@ -66,14 +66,20 @@ export class CatalogService {
   listAdminBranches(query: PaginationQueryDto) {
     return this.branchService.listAdminBranches(query);
   }
-  createBranch(dto: CreateBranchDto, actorId: string) {
-    return this.branchService.createBranch(dto, actorId);
+  async createBranch(dto: CreateBranchDto, actorId: string) {
+    const res = await this.branchService.createBranch(dto, actorId);
+    this.contactSettingsService.invalidateContactSettingsCache();
+    return res;
   }
-  updateBranch(id: string, dto: UpdateBranchDto, actorId: string) {
-    return this.branchService.updateBranch(id, dto, actorId);
+  async updateBranch(id: string, dto: UpdateBranchDto, actorId: string) {
+    const res = await this.branchService.updateBranch(id, dto, actorId);
+    this.contactSettingsService.invalidateContactSettingsCache();
+    return res;
   }
-  deleteBranch(id: string, actorId: string) {
-    return this.branchService.deleteBranch(id, actorId);
+  async deleteBranch(id: string, actorId: string) {
+    const res = await this.branchService.deleteBranch(id, actorId);
+    this.contactSettingsService.invalidateContactSettingsCache();
+    return res;
   }
 
   // 2. Contact Settings
@@ -91,14 +97,20 @@ export class CatalogService {
   listAdminCategories(query: PaginationQueryDto) {
     return this.categoryService.listAdminCategories(query);
   }
-  createCategory(dto: CreateCategoryDto, actorId: string) {
-    return this.categoryService.createCategory(dto, actorId);
+  async createCategory(dto: CreateCategoryDto, actorId: string) {
+    const res = await this.categoryService.createCategory(dto, actorId);
+    this.modelService.invalidateCategoriesCache();
+    return res;
   }
-  updateCategory(id: string, dto: UpdateCategoryDto, actorId: string) {
-    return this.categoryService.updateCategory(id, dto, actorId);
+  async updateCategory(id: string, dto: UpdateCategoryDto, actorId: string) {
+    const res = await this.categoryService.updateCategory(id, dto, actorId);
+    this.modelService.invalidateCategoriesCache();
+    return res;
   }
-  deleteCategory(id: string, actorId: string) {
-    return this.categoryService.deleteCategory(id, actorId);
+  async deleteCategory(id: string, actorId: string) {
+    const res = await this.categoryService.deleteCategory(id, actorId);
+    this.modelService.invalidateCategoriesCache();
+    return res;
   }
 
   // 4. Brand

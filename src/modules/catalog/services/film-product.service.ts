@@ -12,14 +12,35 @@ import {
   UpdateFilmProductDto,
 } from '../dto/catalog.dto';
 
+const FILM_PRODUCT_CACHE_TTL_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class FilmProductService {
+  private publicFilmProductsCache: {
+    data: {
+      items: Array<{
+        id: string;
+        name: string;
+        iso: number;
+        format: string;
+        price: number;
+        inStock: boolean;
+        imageUrl: string | null;
+      }>;
+    };
+    expiresAt: number;
+  } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     @Inject(STORAGE_SERVICE)
     private readonly storageService: StorageService,
   ) {}
+
+  public invalidateFilmProductCache(): void {
+    this.publicFilmProductsCache = null;
+  }
 
   private getModelImageUrl(path: string): string {
     const bucket = this.configService.get<string>(
@@ -30,11 +51,19 @@ export class FilmProductService {
   }
 
   async getPublicFilmProducts() {
+    const now = Date.now();
+    if (
+      this.publicFilmProductsCache &&
+      now < this.publicFilmProductsCache.expiresAt
+    ) {
+      return this.publicFilmProductsCache.data;
+    }
+
     const items = await this.prisma.filmProduct.findMany({
       where: { isActive: true, inStock: true },
       orderBy: [{ name: 'asc' }],
     });
-    return {
+    const data = {
       items: items.map((f) => ({
         id: f.id,
         name: f.name,
@@ -45,6 +74,11 @@ export class FilmProductService {
         imageUrl: f.imagePath ? this.getModelImageUrl(f.imagePath) : null,
       })),
     };
+    this.publicFilmProductsCache = {
+      data,
+      expiresAt: now + FILM_PRODUCT_CACHE_TTL_MS,
+    };
+    return data;
   }
 
   async findFilmProductsByIds(ids: string[]) {
@@ -70,7 +104,7 @@ export class FilmProductService {
   }
 
   async createFilmProduct(dto: CreateFilmProductDto, actorId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const film = await tx.filmProduct.create({
         data: {
           name: dto.name.trim(),
@@ -90,6 +124,8 @@ export class FilmProductService {
       });
       return film;
     });
+    this.invalidateFilmProductCache();
+    return created;
   }
 
   async updateFilmProduct(
@@ -108,7 +144,7 @@ export class FilmProductService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.filmProduct.update({
         where: { id },
         data: {
@@ -129,6 +165,8 @@ export class FilmProductService {
       });
       return updated;
     });
+    this.invalidateFilmProductCache();
+    return updated;
   }
 
   async deleteFilmProduct(id: string, actorId: string) {
@@ -153,6 +191,7 @@ export class FilmProductService {
         metadata: { name: existing.name },
       });
     });
+    this.invalidateFilmProductCache();
     return { success: true };
   }
 }

@@ -12,22 +12,43 @@ import {
   UpdateBrandDto,
 } from '../dto/catalog.dto';
 
+const BRAND_CACHE_TTL_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class BrandService {
+  private publicBrandsCache: {
+    data: { items: Array<{ id: string; slug: string; name: string }> };
+    expiresAt: number;
+  } | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
+  public invalidateBrandCache(): void {
+    this.publicBrandsCache = null;
+  }
+
   async getPublicBrands() {
+    const now = Date.now();
+    if (this.publicBrandsCache && now < this.publicBrandsCache.expiresAt) {
+      return this.publicBrandsCache.data;
+    }
+
     const items = await this.prisma.brand.findMany({
       where: { isActive: true },
       orderBy: [{ name: 'asc' }],
     });
-    return {
+    const data = {
       items: items.map((b) => ({
         id: b.id,
         slug: b.slug,
         name: b.name,
       })),
     };
+    this.publicBrandsCache = {
+      data,
+      expiresAt: now + BRAND_CACHE_TTL_MS,
+    };
+    return data;
   }
 
   async listAdminBrands(query: PaginationQueryDto) {
@@ -48,7 +69,7 @@ export class BrandService {
 
   async createBrand(dto: CreateBrandDto, actorId: string) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const brand = await tx.brand.create({
           data: {
             name: dto.name.trim(),
@@ -65,6 +86,8 @@ export class BrandService {
         });
         return brand;
       });
+      this.invalidateBrandCache();
+      return created;
     } catch (err: unknown) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -91,7 +114,7 @@ export class BrandService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const updated = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.brand.update({
           where: { id },
           data: {
@@ -109,6 +132,8 @@ export class BrandService {
         });
         return updated;
       });
+      this.invalidateBrandCache();
+      return updated;
     } catch (err: unknown) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -142,6 +167,7 @@ export class BrandService {
         where: { id },
         data: { isActive: false },
       });
+      this.invalidateBrandCache();
       return { success: true, message: 'Hãng có mẫu máy nên đã chuyển sang ẩn (isActive = false).' };
     }
 
@@ -155,6 +181,7 @@ export class BrandService {
         metadata: { slug: existing.slug },
       });
     });
+    this.invalidateBrandCache();
     return { success: true };
   }
 }

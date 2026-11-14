@@ -12,16 +12,42 @@ import {
   UpdateBranchDto,
 } from '../dto/catalog.dto';
 
+const BRANCH_CACHE_TTL_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class BranchService {
+  private publicBranchesCache: {
+    data: {
+      items: Array<{
+        id: string;
+        slug: string;
+        name: string;
+        address: string;
+        phone: string;
+        openHours: string;
+        mapUrl: string | null;
+      }>;
+    };
+    expiresAt: number;
+  } | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
+  public invalidateBranchCache(): void {
+    this.publicBranchesCache = null;
+  }
+
   async getPublicBranches() {
+    const now = Date.now();
+    if (this.publicBranchesCache && now < this.publicBranchesCache.expiresAt) {
+      return this.publicBranchesCache.data;
+    }
+
     const items = await this.prisma.branch.findMany({
       where: { isActive: true },
       orderBy: [{ name: 'asc' }],
     });
-    return {
+    const data = {
       items: items.map((b) => ({
         id: b.id,
         slug: b.slug,
@@ -32,9 +58,21 @@ export class BranchService {
         mapUrl: b.mapUrl,
       })),
     };
+    this.publicBranchesCache = {
+      data,
+      expiresAt: now + BRANCH_CACHE_TTL_MS,
+    };
+    return data;
   }
 
   async findActiveBranchBySlug(slug: string) {
+    const now = Date.now();
+    if (this.publicBranchesCache && now < this.publicBranchesCache.expiresAt) {
+      const cached = this.publicBranchesCache.data.items.find(
+        (b) => b.slug === slug,
+      );
+      if (cached) return cached;
+    }
     return this.prisma.branch.findFirst({
       where: { slug, isActive: true },
     });
@@ -58,7 +96,7 @@ export class BranchService {
 
   async createBranch(dto: CreateBranchDto, actorId: string) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const branch = await tx.branch.create({
           data: {
             name: dto.name.trim(),
@@ -79,6 +117,8 @@ export class BranchService {
         });
         return branch;
       });
+      this.invalidateBranchCache();
+      return created;
     } catch (err: unknown) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -105,7 +145,7 @@ export class BranchService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const updated = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.branch.update({
           where: { id },
           data: {
@@ -127,6 +167,8 @@ export class BranchService {
         });
         return updated;
       });
+      this.invalidateBranchCache();
+      return updated;
     } catch (err: unknown) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -160,6 +202,7 @@ export class BranchService {
         where: { id },
         data: { isActive: false },
       });
+      this.invalidateBranchCache();
       return { success: true, message: 'Chi nhánh có máy nên đã chuyển sang ẩn (isActive = false).' };
     }
 
@@ -173,6 +216,7 @@ export class BranchService {
         metadata: { slug: existing.slug },
       });
     });
+    this.invalidateBranchCache();
     return { success: true };
   }
 }

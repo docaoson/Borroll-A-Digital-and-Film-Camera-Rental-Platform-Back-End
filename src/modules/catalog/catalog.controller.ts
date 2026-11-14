@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -27,6 +28,7 @@ export class CatalogController {
 
   @Public()
   @Get('branches')
+  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
   @ApiOperation({ summary: 'Danh sách chi nhánh đang hoạt động' })
   getBranches() {
     return this.catalogService.getPublicBranches();
@@ -34,6 +36,7 @@ export class CatalogController {
 
   @Public()
   @Get('contact-settings')
+  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
   @ApiOperation({ summary: 'Cấu hình liên hệ công khai & danh sách chi nhánh' })
   getContactSettings() {
     return this.catalogService.getPublicContactSettings();
@@ -41,6 +44,7 @@ export class CatalogController {
 
   @Public()
   @Get('categories')
+  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
   @ApiOperation({ summary: 'Cây danh mục thiết bị' })
   getCategories() {
     return this.catalogService.getPublicCategories();
@@ -48,6 +52,7 @@ export class CatalogController {
 
   @Public()
   @Get('brands')
+  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
   @ApiOperation({ summary: 'Danh sách thương hiệu' })
   getBrands() {
     return this.catalogService.getPublicBrands();
@@ -55,6 +60,7 @@ export class CatalogController {
 
   @Public()
   @Get('film-products')
+  @Header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300')
   @ApiOperation({ summary: 'Danh sách film bán kèm' })
   getFilmProducts() {
     return this.catalogService.getPublicFilmProducts();
@@ -73,6 +79,7 @@ export class CatalogController {
 
   @Public()
   @Get('models/:id/availability')
+  @Header('Cache-Control', 'public, max-age=30, stale-while-revalidate=60')
   @ApiOperation({ summary: 'Lịch ngày hết máy theo tháng và chi nhánh' })
   getModelAvailability(
     @Param('id') id: string,

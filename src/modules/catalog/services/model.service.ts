@@ -28,6 +28,7 @@ import {
 } from '../dto/catalog.dto';
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+const MODEL_CATEGORIES_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const CONTENT_TYPE_EXTENSIONS: Record<ImagePresignDto['contentType'], string> =
   {
@@ -38,6 +39,16 @@ const CONTENT_TYPE_EXTENSIONS: Record<ImagePresignDto['contentType'], string> =
 
 @Injectable()
 export class ModelService {
+  private allCategoriesCache: {
+    data: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      parentId: string | null;
+    }>;
+    expiresAt: number;
+  } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -45,6 +56,25 @@ export class ModelService {
     @Inject(STORAGE_SERVICE)
     private readonly storageService: StorageService,
   ) {}
+
+  public invalidateCategoriesCache(): void {
+    this.allCategoriesCache = null;
+  }
+
+  private async getCachedAllCategories() {
+    const now = Date.now();
+    if (this.allCategoriesCache && now < this.allCategoriesCache.expiresAt) {
+      return this.allCategoriesCache.data;
+    }
+    const rows = await this.prisma.category.findMany({
+      select: { id: true, slug: true, name: true, parentId: true },
+    });
+    this.allCategoriesCache = {
+      data: rows,
+      expiresAt: now + MODEL_CATEGORIES_CACHE_TTL_MS,
+    };
+    return rows;
+  }
 
   private getRentalImagesBucket(): string {
     return this.configService.get<string>(
@@ -151,31 +181,7 @@ export class ModelService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
-    const [allCategories, qMatchedIds] = await Promise.all([
-      this.prisma.category.findMany({
-        select: { id: true, slug: true, name: true, parentId: true },
-      }),
-      query.q?.trim()
-        ? this.findMatchingModelIdsByQuery(query.q)
-        : Promise.resolve<string[] | null>(null),
-    ]);
-    const categoryById = new Map(allCategories.map((c) => [c.id, c]));
-
-    const requestedCategorySlugs = (query.category ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const expandedCategorySlugs = this.expandCategorySlugs(
-      requestedCategorySlugs,
-      allCategories,
-    );
-
-    const requestedBrandSlugs = (query.brand ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    // Validate price range bounds
+    // Validate price range bounds upfront before executing DB queries
     if (
       query.minPrice !== undefined &&
       query.maxPrice !== undefined &&
@@ -201,9 +207,6 @@ export class ModelService {
         baseWhere.pricePerDay.lte = query.maxPrice;
       }
     }
-    if (qMatchedIds !== null) {
-      baseWhere.id = { in: qMatchedIds };
-    }
     if (query.kind) baseWhere.kind = query.kind;
     if (query.cameraType) baseWhere.cameraType = query.cameraType;
     if (query.mount) baseWhere.mount = query.mount;
@@ -224,35 +227,86 @@ export class ModelService {
       orderBy = [{ createdAt: 'desc' }, { id: 'asc' }];
     }
 
-    const candidates = await this.prisma.rentalModel.findMany({
-      where: baseWhere,
-      include: {
-        brand: { select: { slug: true, name: true } },
-        category: {
-          select: { id: true, slug: true, name: true, parentId: true },
-        },
-        images: {
-          where: { kind: 'PRODUCT' },
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-          take: 1,
-        },
-        units:
-          activeBranchFilter && !hasDateRange
-            ? {
-                where: {
-                  status: 'AVAILABLE',
-                  branch: { slug: activeBranchFilter, isActive: true },
-                },
-                select: { id: true },
-                take: 1,
-              }
-            : false,
+    const modelInclude = {
+      brand: { select: { slug: true, name: true } },
+      category: {
+        select: { id: true, slug: true, name: true, parentId: true },
       },
-      orderBy,
-    });
+      images: {
+        where: { kind: 'PRODUCT' as const },
+        orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }],
+        take: 1,
+      },
+      units:
+        activeBranchFilter && !hasDateRange
+          ? {
+              where: {
+                status: 'AVAILABLE' as const,
+                branch: { slug: activeBranchFilter, isActive: true },
+              },
+              select: { id: true },
+              take: 1,
+            }
+          : false,
+    } satisfies Prisma.RentalModelInclude;
+
+    type CandidateModel = Prisma.RentalModelGetPayload<{
+      include: typeof modelInclude;
+    }>;
+
+    let allCategories: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      parentId: string | null;
+    }>;
+    let candidates: CandidateModel[];
+
+    if (query.q?.trim()) {
+      const [cats, qMatchedIds] = await Promise.all([
+        this.getCachedAllCategories(),
+        this.findMatchingModelIdsByQuery(query.q),
+      ]);
+      allCategories = cats;
+      if (qMatchedIds.length === 0) {
+        candidates = [];
+      } else {
+        baseWhere.id = { in: qMatchedIds };
+        candidates = await this.prisma.rentalModel.findMany({
+          where: baseWhere,
+          include: modelInclude,
+          orderBy,
+        });
+      }
+    } else {
+      [allCategories, candidates] = await Promise.all([
+        this.getCachedAllCategories(),
+        this.prisma.rentalModel.findMany({
+          where: baseWhere,
+          include: modelInclude,
+          orderBy,
+        }),
+      ]);
+    }
+
+    const categoryById = new Map(allCategories.map((c) => [c.id, c]));
+
+    const requestedCategorySlugs = (query.category ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const expandedCategorySlugs = this.expandCategorySlugs(
+      requestedCategorySlugs,
+      allCategories,
+    );
+
+    const requestedBrandSlugs = (query.brand ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     let availabilityMap: Map<string, string[]> | null = null;
-    if (hasDateRange) {
+    if (hasDateRange && candidates.length > 0) {
       availabilityMap =
         await this.inventoryService.getAvailableBranchSlugsByModel({
           modelIds: candidates.map((m) => m.id),
@@ -431,6 +485,21 @@ export class ModelService {
         category: { select: { slug: true, name: true } },
         images: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
         specs: true,
+        units: {
+          where: {
+            status: UnitStatus.AVAILABLE,
+            branch: { isActive: true },
+          },
+          select: { branch: { select: { slug: true } } },
+          distinct: ['branchId'],
+        },
+        favorites: userId
+          ? {
+              where: { userId },
+              select: { userId: true },
+              take: 1,
+            }
+          : false,
       },
     });
 
@@ -442,14 +511,10 @@ export class ModelService {
       });
     }
 
-    const [availableAtBranches, favorite] = await Promise.all([
-      this.inventoryService.getActiveUnitBranchSlugsForModel(model.id),
-      userId
-        ? this.prisma.favorite.findUnique({
-            where: { userId_modelId: { userId, modelId: model.id } },
-          })
-        : Promise.resolve(null),
-    ]);
+    const availableAtBranches = Array.from(
+      new Set(model.units.map((u) => u.branch.slug)),
+    ).sort();
+    const isFavorite = Array.isArray(model.favorites) && model.favorites.length > 0;
 
     const inspection =
       model.lastInspectedAt || model.inspectionNotes
@@ -488,7 +553,7 @@ export class ModelService {
       inspection,
       availableAtBranches,
       aiSetupAvailable: false,
-      isFavorite: Boolean(favorite),
+      isFavorite,
     };
   }
 
@@ -496,7 +561,7 @@ export class ModelService {
     modelId: string,
     query: ModelAvailabilityQueryDto,
   ) {
-    const [model, branch] = await Promise.all([
+    const [model, branch, unavailableDates] = await Promise.all([
       this.prisma.rentalModel.findFirst({
         where: { id: modelId, isActive: true },
         select: { id: true },
@@ -504,6 +569,11 @@ export class ModelService {
       this.prisma.branch.findFirst({
         where: { slug: query.branch, isActive: true },
         select: { id: true, slug: true },
+      }),
+      this.inventoryService.getUnavailableDatesForModel({
+        modelId,
+        branchSlug: query.branch,
+        month: query.month,
       }),
     ]);
 
@@ -514,13 +584,6 @@ export class ModelService {
         details: {},
       });
     }
-
-    const unavailableDates =
-      await this.inventoryService.getUnavailableDatesForModel({
-        modelId: model.id,
-        branchId: branch.id,
-        month: query.month,
-      });
 
     return {
       month: query.month,

@@ -97,20 +97,44 @@ export class InventoryService {
 
   async getUnavailableDatesForModel(params: {
     modelId: string;
-    branchId: string;
+    branchId?: string;
+    branchSlug?: string;
     month: string;
   }): Promise<string[]> {
     const { startDate, endExclusiveDate, daysInMonth, year, month } =
       getMonthRange(params.month);
 
-    const units = await this.prisma.rentalUnit.findMany({
-      where: {
-        modelId: params.modelId,
-        branchId: params.branchId,
-        status: UnitStatus.AVAILABLE,
-      },
-      select: { id: true },
-    });
+    const unitFilter: Prisma.RentalUnitWhereInput = {
+      modelId: params.modelId,
+      status: UnitStatus.AVAILABLE,
+      ...(params.branchId
+        ? { branchId: params.branchId }
+        : { branch: { slug: params.branchSlug, isActive: true } }),
+    };
+
+    const [units, blocks, bookingUnits] = await Promise.all([
+      this.prisma.rentalUnit.findMany({
+        where: unitFilter,
+        select: { id: true },
+      }),
+      this.prisma.unitBlock.findMany({
+        where: {
+          unit: unitFilter,
+          startDate: { lt: endExclusiveDate },
+          endDate: { gt: startDate },
+        },
+        select: { unitId: true, startDate: true, endDate: true },
+      }),
+      this.prisma.bookingUnit.findMany({
+        where: {
+          unit: unitFilter,
+          active: true,
+          startDate: { lt: endExclusiveDate },
+          endDate: { gt: startDate },
+        },
+        select: { unitId: true, startDate: true, endDate: true },
+      }),
+    ]);
 
     if (units.length === 0) {
       const allDates: string[] = [];
@@ -123,26 +147,6 @@ export class InventoryService {
     }
 
     const unitIds = units.map((u) => u.id);
-
-    const [blocks, bookingUnits] = await Promise.all([
-      this.prisma.unitBlock.findMany({
-        where: {
-          unitId: { in: unitIds },
-          startDate: { lt: endExclusiveDate },
-          endDate: { gt: startDate },
-        },
-        select: { unitId: true, startDate: true, endDate: true },
-      }),
-      this.prisma.bookingUnit.findMany({
-        where: {
-          unitId: { in: unitIds },
-          active: true,
-          startDate: { lt: endExclusiveDate },
-          endDate: { gt: startDate },
-        },
-        select: { unitId: true, startDate: true, endDate: true },
-      }),
-    ]);
 
     const busyByUnit = new Map<
       string,
@@ -256,6 +260,47 @@ export class InventoryService {
       `,
     );
     return Number(rows[0]?.count ?? 0);
+  }
+
+  async countAvailableUnitsForModels(params: {
+    modelIds: string[];
+    branchId: string;
+    startDate: string;
+    endDate: string;
+  }): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (params.modelIds.length === 0) {
+      return counts;
+    }
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ model_id: string; count: bigint }>
+    >(
+      Prisma.sql`
+        SELECT ru.model_id, COUNT(*)::bigint AS count
+        FROM rental_units ru
+        WHERE ru.model_id IN (${Prisma.join(params.modelIds)})
+          AND ru.branch_id = ${params.branchId}
+          AND ru.status = 'AVAILABLE'::"UnitStatus"
+          AND NOT EXISTS (
+            SELECT 1 FROM unit_blocks ub
+            WHERE ub.unit_id = ru.id
+              AND ub.during && daterange(${params.startDate}::date, ${params.endDate}::date, '[)')
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM booking_units bu
+            WHERE bu.unit_id = ru.id
+              AND bu.active = true
+              AND bu.during && daterange(${params.startDate}::date, ${params.endDate}::date, '[)')
+          )
+        GROUP BY ru.model_id
+      `,
+    );
+
+    for (const row of rows) {
+      counts.set(row.model_id, Number(row.count));
+    }
+    return counts;
   }
 
   async listStaffUnits(query: ListUnitsQueryDto) {

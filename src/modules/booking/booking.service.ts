@@ -32,7 +32,7 @@ import {
 } from './dto/booking.dto';
 import { PricingService } from './pricing.service';
 
-export const BOOKING_INCLUDE_DETAIL = {
+export const BOOKING_INCLUDE_SUMMARY = {
   branch: {
     select: { id: true, slug: true, name: true, address: true, phone: true },
   },
@@ -62,6 +62,10 @@ export const BOOKING_INCLUDE_DETAIL = {
       filmProduct: { select: { id: true, name: true } },
     },
   },
+} satisfies Prisma.BookingInclude;
+
+export const BOOKING_INCLUDE_DETAIL = {
+  ...BOOKING_INCLUDE_SUMMARY,
   handovers: {
     orderBy: [{ createdAt: 'asc' as const }],
   },
@@ -69,6 +73,10 @@ export const BOOKING_INCLUDE_DETAIL = {
     orderBy: [{ createdAt: 'asc' as const }],
   },
 } satisfies Prisma.BookingInclude;
+
+export type BookingWithSummary = Prisma.BookingGetPayload<{
+  include: typeof BOOKING_INCLUDE_SUMMARY;
+}>;
 
 export type BookingWithDetail = Prisma.BookingGetPayload<{
   include: typeof BOOKING_INCLUDE_DETAIL;
@@ -160,7 +168,10 @@ export class BookingService {
     return false;
   }
 
-  formatBookingSummary(booking: BookingWithDetail, viewerRoles: string[]) {
+  formatBookingSummary(
+    booking: BookingWithSummary | BookingWithDetail,
+    viewerRoles: string[],
+  ) {
     const { viewerRole, allowedActions } = computeViewerContext(
       booking.status,
       viewerRoles,
@@ -288,23 +299,21 @@ export class BookingService {
       );
     }
 
-    const availabilityResults = await Promise.all(
-      Array.from(requestedCounts.entries()).map(
-        async ([modelId, neededCount]) => {
-          const availableCount =
-            await this.inventoryService.countAvailableUnitsForModel({
-              modelId,
-              branchId: calculated.branch.id,
-              startDate: dto.startDate,
-              endDate: dto.endDate,
-            });
-          return { modelId, available: availableCount >= neededCount };
-        },
-      ),
-    );
-    const unavailableModelIds = availabilityResults
-      .filter((r) => !r.available)
-      .map((r) => r.modelId);
+    const availableCountsMap =
+      await this.inventoryService.countAvailableUnitsForModels({
+        modelIds: Array.from(requestedCounts.keys()),
+        branchId: calculated.branch.id,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+      });
+
+    const unavailableModelIds: string[] = [];
+    for (const [modelId, neededCount] of requestedCounts.entries()) {
+      const availableCount = availableCountsMap.get(modelId) ?? 0;
+      if (availableCount < neededCount) {
+        unavailableModelIds.push(modelId);
+      }
+    }
 
     return {
       days: calculated.days,
@@ -541,7 +550,7 @@ export class BookingService {
     const [items, total] = await Promise.all([
       this.prisma.booking.findMany({
         where,
-        include: BOOKING_INCLUDE_DETAIL,
+        include: BOOKING_INCLUDE_SUMMARY,
         orderBy: [{ createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -610,28 +619,28 @@ export class BookingService {
         include: BOOKING_INCLUDE_DETAIL,
       });
 
-      await tx.bookingUnit.updateMany({
-        where: { bookingId },
-        data: { active: false },
-      });
-
-      await tx.bookingStatusLog.create({
-        data: {
-          bookingId,
-          fromStatus: existing.status,
-          toStatus: BookingStatus.CANCELLED,
+      await Promise.all([
+        tx.bookingUnit.updateMany({
+          where: { bookingId },
+          data: { active: false },
+        }),
+        tx.bookingStatusLog.create({
+          data: {
+            bookingId,
+            fromStatus: existing.status,
+            toStatus: BookingStatus.CANCELLED,
+            actorId: userId,
+            note: dto.reason?.trim() || 'Khách hàng hủy đơn',
+          },
+        }),
+        writeAuditLog(tx, {
           actorId: userId,
-          note: dto.reason?.trim() || 'Khách hàng hủy đơn',
-        },
-      });
-
-      await writeAuditLog(tx, {
-        actorId: userId,
-        action: 'BOOKING_CANCELLED_BY_CUSTOMER',
-        targetType: 'BOOKING',
-        targetId: bookingId,
-        metadata: { fromStatus: existing.status, reason: dto.reason ?? null },
-      });
+          action: 'BOOKING_CANCELLED_BY_CUSTOMER',
+          targetType: 'BOOKING',
+          targetId: bookingId,
+          metadata: { fromStatus: existing.status, reason: dto.reason ?? null },
+        }),
+      ]);
 
       return booking;
     });
@@ -670,27 +679,27 @@ export class BookingService {
           return false;
         }
 
-        await tx.bookingUnit.updateMany({
-          where: { bookingId: item.id },
-          data: { active: false },
-        });
-
-        await tx.bookingStatusLog.create({
-          data: {
-            bookingId: item.id,
-            fromStatus: BookingStatus.PENDING,
-            toStatus: BookingStatus.CANCELLED,
+        await Promise.all([
+          tx.bookingUnit.updateMany({
+            where: { bookingId: item.id },
+            data: { active: false },
+          }),
+          tx.bookingStatusLog.create({
+            data: {
+              bookingId: item.id,
+              fromStatus: BookingStatus.PENDING,
+              toStatus: BookingStatus.CANCELLED,
+              actorId: null,
+              note: 'Hết hạn chờ xác nhận',
+            },
+          }),
+          writeAuditLog(tx, {
             actorId: null,
-            note: 'Hết hạn chờ xác nhận',
-          },
-        });
-
-        await writeAuditLog(tx, {
-          actorId: null,
-          action: 'BOOKING_EXPIRED',
-          targetType: 'BOOKING',
-          targetId: item.id,
-        });
+            action: 'BOOKING_EXPIRED',
+            targetType: 'BOOKING',
+            targetId: item.id,
+          }),
+        ]);
 
         return true;
       });

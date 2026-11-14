@@ -21,11 +21,30 @@ interface CategoryTreeNode {
   children: CategoryTreeNode[];
 }
 
+const CATEGORY_CACHE_TTL_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class CategoryService {
+  private publicCategoriesCache: {
+    data: { items: Array<{ id: string; slug: string; name: string; children: unknown[] }> };
+    expiresAt: number;
+  } | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
+  public invalidateCategoryCache(): void {
+    this.publicCategoriesCache = null;
+  }
+
   async getPublicCategories() {
+    const now = Date.now();
+    if (
+      this.publicCategoriesCache &&
+      now < this.publicCategoriesCache.expiresAt
+    ) {
+      return this.publicCategoriesCache.data;
+    }
+
     const rows = await this.prisma.category.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -61,7 +80,12 @@ export class CategoryService {
       children: node.children.map(stripMeta),
     });
 
-    return { items: roots.map(stripMeta) };
+    const data = { items: roots.map(stripMeta) };
+    this.publicCategoriesCache = {
+      data,
+      expiresAt: now + CATEGORY_CACHE_TTL_MS,
+    };
+    return data;
   }
 
   async listAdminCategories(query: PaginationQueryDto) {
@@ -82,7 +106,7 @@ export class CategoryService {
 
   async createCategory(dto: CreateCategoryDto, actorId: string) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const cat = await tx.category.create({
           data: {
             name: dto.name.trim(),
@@ -101,6 +125,8 @@ export class CategoryService {
         });
         return cat;
       });
+      this.invalidateCategoryCache();
+      return created;
     } catch (err: unknown) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -127,7 +153,7 @@ export class CategoryService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const updated = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.category.update({
           where: { id },
           data: {
@@ -147,6 +173,8 @@ export class CategoryService {
         });
         return updated;
       });
+      this.invalidateCategoryCache();
+      return updated;
     } catch (err: unknown) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -180,6 +208,7 @@ export class CategoryService {
         where: { id },
         data: { isActive: false },
       });
+      this.invalidateCategoryCache();
       return { success: true, message: 'Danh mục có mẫu máy nên đã chuyển sang ẩn (isActive = false).' };
     }
 
@@ -193,6 +222,7 @@ export class CategoryService {
         metadata: { slug: existing.slug },
       });
     });
+    this.invalidateCategoryCache();
     return { success: true };
   }
 }

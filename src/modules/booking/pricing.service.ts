@@ -89,9 +89,28 @@ export class PricingService {
       });
     }
 
-    const branch = await this.catalogService.findActiveBranchBySlug(
-      dto.branchSlug,
+    const uniqueModelIds = Array.from(
+      new Set(dto.items.map((item) => item.modelId)),
     );
+
+    // Merge duplicate addon IDs if any
+    const addonQtyMap = new Map<string, number>();
+    for (const addon of dto.addons ?? []) {
+      addonQtyMap.set(
+        addon.filmProductId,
+        (addonQtyMap.get(addon.filmProductId) ?? 0) + addon.quantity,
+      );
+    }
+    const addonIds = Array.from(addonQtyMap.keys());
+
+    const [branch, models, filmProducts] = await Promise.all([
+      this.catalogService.findActiveBranchBySlug(dto.branchSlug),
+      this.catalogService.findModelsForBooking(uniqueModelIds),
+      addonIds.length > 0
+        ? this.catalogService.findFilmProductsByIds(addonIds)
+        : Promise.resolve([]),
+    ]);
+
     if (!branch) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
@@ -100,11 +119,6 @@ export class PricingService {
       });
     }
 
-    const uniqueModelIds = Array.from(
-      new Set(dto.items.map((item) => item.modelId)),
-    );
-    const models =
-      await this.catalogService.findModelsForBooking(uniqueModelIds);
     const modelMap = new Map(models.map((m) => [m.id, m]));
 
     const resolvedItems = dto.items.map((item) => {
@@ -158,20 +172,6 @@ export class PricingService {
       depositAmount: model.deposit,
     }));
 
-    // Merge duplicate addon IDs if any
-    const addonQtyMap = new Map<string, number>();
-    for (const addon of dto.addons ?? []) {
-      addonQtyMap.set(
-        addon.filmProductId,
-        (addonQtyMap.get(addon.filmProductId) ?? 0) + addon.quantity,
-      );
-    }
-
-    const addonIds = Array.from(addonQtyMap.keys());
-    const filmProducts =
-      addonIds.length > 0
-        ? await this.catalogService.findFilmProductsByIds(addonIds)
-        : [];
     const filmMap = new Map(filmProducts.map((f) => [f.id, f]));
 
     const addons: PricedAddon[] = addonIds.map((filmId) => {
