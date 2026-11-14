@@ -103,11 +103,11 @@ export class CatalogController {
     if (res) {
       res.setHeader('Vary', 'Authorization');
       if (userId) {
-        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+        res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
       } else {
         res.setHeader(
           'Cache-Control',
-          'public, max-age=60, s-maxage=180, stale-while-revalidate=600',
+          'public, max-age=0, s-maxage=0, must-revalidate',
         );
       }
     }
@@ -140,11 +140,11 @@ export class CatalogController {
     if (res) {
       res.setHeader('Vary', 'Authorization');
       if (userId) {
-        res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+        res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
       } else {
         res.setHeader(
           'Cache-Control',
-          'public, max-age=60, s-maxage=180, stale-while-revalidate=600',
+          'public, max-age=0, s-maxage=0, must-revalidate',
         );
       }
     }
