@@ -29,6 +29,7 @@ import {
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 const MODEL_CATEGORIES_CACHE_TTL_MS = 5 * 60 * 1000;
+const ACTIVE_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const CONTENT_TYPE_EXTENSIONS: Record<ImagePresignDto['contentType'], string> =
   {
@@ -36,6 +37,37 @@ const CONTENT_TYPE_EXTENSIONS: Record<ImagePresignDto['contentType'], string> =
     'image/png': 'png',
     'image/webp': 'webp',
   };
+
+const ACTIVE_MODEL_CACHE_INCLUDE = {
+  brand: { select: { slug: true, name: true } },
+  category: {
+    select: { id: true, slug: true, name: true, parentId: true },
+  },
+  images: {
+    where: { kind: 'PRODUCT' as const },
+    orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }],
+    take: 1,
+  },
+  units: {
+    where: {
+      status: UnitStatus.AVAILABLE,
+      branch: { isActive: true },
+    },
+    select: { branch: { select: { slug: true } } },
+    distinct: ['branchId' as const],
+  },
+} satisfies Prisma.RentalModelInclude;
+
+type RawActiveModel = Prisma.RentalModelGetPayload<{
+  include: typeof ACTIVE_MODEL_CACHE_INCLUDE;
+}>;
+
+interface CachedActiveModel extends RawActiveModel {
+  normName: string;
+  normBrandName: string;
+  availableBranchSlugs: string[];
+  thumbnailUrl: string | null;
+}
 
 @Injectable()
 export class ModelService {
@@ -49,6 +81,23 @@ export class ModelService {
     expiresAt: number;
   } | null = null;
 
+  private activeModelsCache: {
+    data: CachedActiveModel[];
+    expiresAt: number;
+    unitsVersion: number;
+  } | null = null;
+
+  private activeModelsInFlight: Promise<CachedActiveModel[]> | null = null;
+
+  private readonly modelDetailBySlugCache = new Map<
+    string,
+    {
+      data: Record<string, unknown> & { id: string; slug: string };
+      expiresAt: number;
+      unitsVersion: number;
+    }
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -59,6 +108,102 @@ export class ModelService {
 
   public invalidateCategoriesCache(): void {
     this.allCategoriesCache = null;
+    this.invalidateModelsCache();
+  }
+
+  public invalidateModelsCache(): void {
+    this.activeModelsCache = null;
+    this.activeModelsInFlight = null;
+    this.modelDetailBySlugCache.clear();
+  }
+
+  private getCurrentUnitsVersion(): number {
+    return typeof this.inventoryService?.getUnitsCacheVersion === 'function'
+      ? this.inventoryService.getUnitsCacheVersion()
+      : 0;
+  }
+
+  private unaccent(input: string): string {
+    return input
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'd')
+      .toLowerCase();
+  }
+
+  private matchesSearchTokens(
+    model: CachedActiveModel,
+    normTokens: string[],
+  ): boolean {
+    for (const token of normTokens) {
+      if (token.length < 3) {
+        const matchesName = model.normName.includes(token);
+        const matchesBrandPrefix =
+          model.normBrandName.startsWith(token) ||
+          model.normBrandName.includes(` ${token}`);
+        if (!matchesName && !matchesBrandPrefix) {
+          return false;
+        }
+      } else {
+        if (
+          !model.normName.includes(token) &&
+          !model.normBrandName.includes(token)
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private async getCachedActiveModels(): Promise<CachedActiveModel[]> {
+    const now = Date.now();
+    const currentUnitsVersion = this.getCurrentUnitsVersion();
+    if (
+      this.activeModelsCache &&
+      now < this.activeModelsCache.expiresAt &&
+      this.activeModelsCache.unitsVersion === currentUnitsVersion
+    ) {
+      return this.activeModelsCache.data;
+    }
+
+    if (this.activeModelsInFlight) {
+      return this.activeModelsInFlight;
+    }
+
+    this.activeModelsInFlight = this.prisma.rentalModel
+      .findMany({
+        where: { isActive: true },
+        include: ACTIVE_MODEL_CACHE_INCLUDE,
+        orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
+      })
+      .then((rows) => {
+        const enriched: CachedActiveModel[] = rows.map((m) => ({
+          ...m,
+          normName: this.unaccent(m.name),
+          normBrandName: this.unaccent(m.brand.name),
+          availableBranchSlugs: Array.from(
+            new Set(m.units.map((u) => u.branch.slug)),
+          ).sort(),
+          thumbnailUrl: m.images[0]
+            ? this.getModelImageUrl(m.images[0].path)
+            : null,
+        }));
+        this.activeModelsCache = {
+          data: enriched,
+          expiresAt: Date.now() + ACTIVE_MODELS_CACHE_TTL_MS,
+          unitsVersion: this.getCurrentUnitsVersion(),
+        };
+        this.activeModelsInFlight = null;
+        return enriched;
+      })
+      .catch((err) => {
+        this.activeModelsInFlight = null;
+        throw err;
+      });
+
+    return this.activeModelsInFlight;
   }
 
   private async getCachedAllCategories() {
@@ -89,40 +234,6 @@ export class ModelService {
 
   private buildBadges(createdAt: Date): string[] {
     return Date.now() - createdAt.getTime() <= FOURTEEN_DAYS_MS ? ['NEW'] : [];
-  }
-
-  private async findMatchingModelIdsByQuery(q: string): Promise<string[]> {
-    const tokens = q.trim().split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) {
-      return [];
-    }
-
-    const conditions = tokens.map((token) => {
-      // Với token ngắn (< 3 ký tự), so khớp hãng theo tiền tố từ (prefix)
-      // để khi gõ 'a' không bị match nhầm các hãng có chứa chữ 'a' như 'Canon'
-      if (token.length < 3) {
-        return Prisma.sql`(
-          unaccent(lower(rm.name)) LIKE '%' || unaccent(lower(${token})) || '%'
-          OR unaccent(lower(b.name)) LIKE unaccent(lower(${token})) || '%'
-          OR unaccent(lower(b.name)) LIKE '% ' || unaccent(lower(${token})) || '%'
-        )`;
-      }
-
-      // Với token >= 3 ký tự, so khớp tự do (substring) trong cả tên máy hoặc tên hãng
-      return Prisma.sql`(
-        unaccent(lower(rm.name)) LIKE '%' || unaccent(lower(${token})) || '%'
-        OR unaccent(lower(b.name)) LIKE '%' || unaccent(lower(${token})) || '%'
-      )`;
-    });
-
-    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT rm.id
-      FROM rental_models rm
-      INNER JOIN brands b ON b.id = rm.brand_id
-      WHERE rm.is_active = true
-        AND ${Prisma.join(conditions, ' AND ')}
-    `);
-    return rows.map((r) => r.id);
   }
 
   private expandCategorySlugs(
@@ -197,96 +308,48 @@ export class ModelService {
     const hasDateRange = Boolean(query.from && query.to);
     const activeBranchFilter = query.branch?.trim() || undefined;
 
-    const baseWhere: Prisma.RentalModelWhereInput = { isActive: true };
-    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
-      baseWhere.pricePerDay = {};
-      if (query.minPrice !== undefined) {
-        baseWhere.pricePerDay.gte = query.minPrice;
-      }
-      if (query.maxPrice !== undefined) {
-        baseWhere.pricePerDay.lte = query.maxPrice;
-      }
-    }
-    if (query.kind) baseWhere.kind = query.kind;
-    if (query.cameraType) baseWhere.cameraType = query.cameraType;
-    if (query.mount) baseWhere.mount = query.mount;
-    if (query.featured === 'true') baseWhere.isFeatured = true;
-    if (query.excludeId) {
-      baseWhere.AND = [{ id: { not: query.excludeId } }];
-    }
+    const [allCategories, allActiveModels] = await Promise.all([
+      this.getCachedAllCategories(),
+      this.getCachedActiveModels(),
+    ]);
 
-    let orderBy: Prisma.RentalModelOrderByWithRelationInput[] = [
-      { isFeatured: 'desc' },
-      { createdAt: 'desc' },
-    ];
+    const normSearchTokens = query.q?.trim()
+      ? query.q
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((t) => this.unaccent(t))
+      : [];
+
+    let candidates = allActiveModels.filter((m) => {
+      if (query.kind && m.kind !== query.kind) return false;
+      if (query.cameraType && m.cameraType !== query.cameraType) return false;
+      if (query.mount && m.mount !== query.mount) return false;
+      if (query.featured === 'true' && !m.isFeatured) return false;
+      if (query.excludeId && m.id === query.excludeId) return false;
+      if (
+        normSearchTokens.length > 0 &&
+        !this.matchesSearchTokens(m, normSearchTokens)
+      ) {
+        return false;
+      }
+      return true;
+    });
+
     if (query.sort === 'price_asc') {
-      orderBy = [{ pricePerDay: 'asc' }, { id: 'asc' }];
+      candidates = [...candidates].sort(
+        (a, b) => a.pricePerDay - b.pricePerDay || a.id.localeCompare(b.id),
+      );
     } else if (query.sort === 'price_desc') {
-      orderBy = [{ pricePerDay: 'desc' }, { id: 'asc' }];
+      candidates = [...candidates].sort(
+        (a, b) => b.pricePerDay - a.pricePerDay || a.id.localeCompare(b.id),
+      );
     } else if (query.sort === 'newest') {
-      orderBy = [{ createdAt: 'desc' }, { id: 'asc' }];
-    }
-
-    const modelInclude = {
-      brand: { select: { slug: true, name: true } },
-      category: {
-        select: { id: true, slug: true, name: true, parentId: true },
-      },
-      images: {
-        where: { kind: 'PRODUCT' as const },
-        orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }],
-        take: 1,
-      },
-      units:
-        activeBranchFilter && !hasDateRange
-          ? {
-              where: {
-                status: 'AVAILABLE' as const,
-                branch: { slug: activeBranchFilter, isActive: true },
-              },
-              select: { id: true },
-              take: 1,
-            }
-          : false,
-    } satisfies Prisma.RentalModelInclude;
-
-    type CandidateModel = Prisma.RentalModelGetPayload<{
-      include: typeof modelInclude;
-    }>;
-
-    let allCategories: Array<{
-      id: string;
-      slug: string;
-      name: string;
-      parentId: string | null;
-    }>;
-    let candidates: CandidateModel[];
-
-    if (query.q?.trim()) {
-      const [cats, qMatchedIds] = await Promise.all([
-        this.getCachedAllCategories(),
-        this.findMatchingModelIdsByQuery(query.q),
-      ]);
-      allCategories = cats;
-      if (qMatchedIds.length === 0) {
-        candidates = [];
-      } else {
-        baseWhere.id = { in: qMatchedIds };
-        candidates = await this.prisma.rentalModel.findMany({
-          where: baseWhere,
-          include: modelInclude,
-          orderBy,
-        });
-      }
-    } else {
-      [allCategories, candidates] = await Promise.all([
-        this.getCachedAllCategories(),
-        this.prisma.rentalModel.findMany({
-          where: baseWhere,
-          include: modelInclude,
-          orderBy,
-        }),
-      ]);
+      candidates = [...candidates].sort(
+        (a, b) =>
+          b.createdAt.getTime() - a.createdAt.getTime() ||
+          a.id.localeCompare(b.id),
+      );
     }
 
     const categoryById = new Map(allCategories.map((c) => [c.id, c]));
@@ -322,7 +385,7 @@ export class ModelService {
         return branches.length > 0;
       }
       if (activeBranchFilter) {
-        return Array.isArray(model.units) && model.units.length > 0;
+        return model.availableBranchSlugs.includes(activeBranchFilter);
       }
       return true;
     });
@@ -453,17 +516,15 @@ export class ModelService {
           pricePerDay: m.pricePerDay,
           pricePerWeek: m.pricePerWeek,
           deposit: m.deposit,
-          thumbnailUrl: m.images[0]
-            ? this.getModelImageUrl(m.images[0].path)
-            : null,
+          thumbnailUrl: m.thumbnailUrl,
           isFeatured: m.isFeatured,
           badges: this.buildBadges(m.createdAt),
           isFavorite: favoriteSet.has(m.id),
           description: m.description,
+          availableAtBranches: hasDateRange
+            ? (availabilityMap?.get(m.id) ?? [])
+            : m.availableBranchSlugs,
         };
-        if (hasDateRange) {
-          baseItem.availableAtBranches = availabilityMap?.get(m.id) ?? [];
-        }
         return baseItem;
       }),
       page,
@@ -478,6 +539,31 @@ export class ModelService {
   }
 
   async getPublicModelBySlug(slug: string, userId?: string) {
+    const now = Date.now();
+    const currentUnitsVersion = this.getCurrentUnitsVersion();
+    const cached = this.modelDetailBySlugCache.get(slug);
+
+    if (
+      cached &&
+      now < cached.expiresAt &&
+      cached.unitsVersion === currentUnitsVersion
+    ) {
+      let isFavorite = false;
+      if (userId) {
+        const fav = await this.prisma.favorite.findUnique({
+          where: {
+            userId_modelId: { userId, modelId: cached.data.id },
+          },
+          select: { userId: true },
+        });
+        isFavorite = Boolean(fav);
+      }
+      return {
+        ...cached.data,
+        isFavorite,
+      };
+    }
+
     const model = await this.prisma.rentalModel.findFirst({
       where: { slug, isActive: true },
       include: {
@@ -514,7 +600,8 @@ export class ModelService {
     const availableAtBranches = Array.from(
       new Set(model.units.map((u) => u.branch.slug)),
     ).sort();
-    const isFavorite = Array.isArray(model.favorites) && model.favorites.length > 0;
+    const isFavorite =
+      Array.isArray(model.favorites) && model.favorites.length > 0;
 
     const inspection =
       model.lastInspectedAt || model.inspectionNotes
@@ -528,7 +615,7 @@ export class ModelService {
           }
         : null;
 
-    return {
+    const baseDetail = {
       id: model.id,
       slug: model.slug,
       name: model.name,
@@ -553,6 +640,16 @@ export class ModelService {
       inspection,
       availableAtBranches,
       aiSetupAvailable: false,
+    };
+
+    this.modelDetailBySlugCache.set(slug, {
+      data: baseDetail,
+      expiresAt: Date.now() + ACTIVE_MODELS_CACHE_TTL_MS,
+      unitsVersion: currentUnitsVersion,
+    });
+
+    return {
+      ...baseDetail,
       isFavorite,
     };
   }
@@ -743,6 +840,7 @@ export class ModelService {
         });
         return model;
       });
+      this.invalidateModelsCache();
       return this.getAdminModel(created.id);
     } catch (err: unknown) {
       if (
@@ -813,6 +911,7 @@ export class ModelService {
           metadata: dto as unknown as Prisma.InputJsonValue,
         });
       });
+      this.invalidateModelsCache();
       return this.getAdminModel(id);
     } catch (err: unknown) {
       if (
@@ -856,6 +955,7 @@ export class ModelService {
           targetId: id,
         });
       });
+      this.invalidateModelsCache();
       return { id, isActive: false, hidden: true };
     }
 
@@ -868,6 +968,7 @@ export class ModelService {
         targetId: id,
       });
     });
+    this.invalidateModelsCache();
     return { id, deleted: true };
   }
 
@@ -900,6 +1001,7 @@ export class ModelService {
       });
       return upserted;
     });
+    this.invalidateModelsCache();
     return { modelId: saved.modelId, specs: saved.specs };
   }
 
@@ -966,6 +1068,7 @@ export class ModelService {
       });
       return created;
     });
+    this.invalidateModelsCache();
 
     return {
       ...image,
@@ -994,6 +1097,7 @@ export class ModelService {
         targetId: modelId,
       });
     });
+    this.invalidateModelsCache();
     return { ok: true };
   }
 
@@ -1019,6 +1123,7 @@ export class ModelService {
         metadata: { imageId },
       });
     });
+    this.invalidateModelsCache();
     return { deleted: true };
   }
 }

@@ -69,16 +69,19 @@ export class CatalogService {
   async createBranch(dto: CreateBranchDto, actorId: string) {
     const res = await this.branchService.createBranch(dto, actorId);
     this.contactSettingsService.invalidateContactSettingsCache();
+    this.modelService.invalidateModelsCache();
     return res;
   }
   async updateBranch(id: string, dto: UpdateBranchDto, actorId: string) {
     const res = await this.branchService.updateBranch(id, dto, actorId);
     this.contactSettingsService.invalidateContactSettingsCache();
+    this.modelService.invalidateModelsCache();
     return res;
   }
   async deleteBranch(id: string, actorId: string) {
     const res = await this.branchService.deleteBranch(id, actorId);
     this.contactSettingsService.invalidateContactSettingsCache();
+    this.modelService.invalidateModelsCache();
     return res;
   }
 
@@ -120,14 +123,20 @@ export class CatalogService {
   listAdminBrands(query: PaginationQueryDto) {
     return this.brandService.listAdminBrands(query);
   }
-  createBrand(dto: CreateBrandDto, actorId: string) {
-    return this.brandService.createBrand(dto, actorId);
+  async createBrand(dto: CreateBrandDto, actorId: string) {
+    const res = await this.brandService.createBrand(dto, actorId);
+    this.modelService.invalidateModelsCache();
+    return res;
   }
-  updateBrand(id: string, dto: UpdateBrandDto, actorId: string) {
-    return this.brandService.updateBrand(id, dto, actorId);
+  async updateBrand(id: string, dto: UpdateBrandDto, actorId: string) {
+    const res = await this.brandService.updateBrand(id, dto, actorId);
+    this.modelService.invalidateModelsCache();
+    return res;
   }
-  deleteBrand(id: string, actorId: string) {
-    return this.brandService.deleteBrand(id, actorId);
+  async deleteBrand(id: string, actorId: string) {
+    const res = await this.brandService.deleteBrand(id, actorId);
+    this.modelService.invalidateModelsCache();
+    return res;
   }
 
   // 5. Film Product

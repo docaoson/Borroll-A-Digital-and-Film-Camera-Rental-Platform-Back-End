@@ -22,7 +22,17 @@ import {
 
 @Injectable()
 export class InventoryService {
+  private unitsCacheVersion = 0;
+
   constructor(private readonly prisma: PrismaService) {}
+
+  public getUnitsCacheVersion(): number {
+    return this.unitsCacheVersion;
+  }
+
+  public bumpUnitsCacheVersion(): void {
+    this.unitsCacheVersion += 1;
+  }
 
   async getAvailableBranchSlugsByModel(params: {
     modelIds: string[];
@@ -557,6 +567,7 @@ export class InventoryService {
         });
         return unit;
       });
+      this.bumpUnitsCacheVersion();
       return this.getAdminUnit(created.id);
     } catch (err: unknown) {
       if (
@@ -610,6 +621,7 @@ export class InventoryService {
           metadata: dto as unknown as Prisma.InputJsonValue,
         });
       });
+      this.bumpUnitsCacheVersion();
       return this.getAdminUnit(id);
     } catch (err: unknown) {
       if (
@@ -653,6 +665,7 @@ export class InventoryService {
           metadata: { reason: 'Unit has booking history' },
         });
       });
+      this.bumpUnitsCacheVersion();
       return { id, status: UnitStatus.RETIRED, retired: true };
     }
 
@@ -665,6 +678,7 @@ export class InventoryService {
         targetId: id,
       });
     });
+    this.bumpUnitsCacheVersion();
     return { id, deleted: true };
   }
 }
