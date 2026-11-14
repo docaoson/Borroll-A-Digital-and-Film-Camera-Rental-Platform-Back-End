@@ -62,10 +62,18 @@ export const BOOKING_INCLUDE_SUMMARY = {
       filmProduct: { select: { id: true, name: true } },
     },
   },
+  manualPayment: {
+    include: {
+      proofs: { orderBy: [{ submittedAt: 'desc' as const }], take: 1 },
+    },
+  },
 } satisfies Prisma.BookingInclude;
 
 export const BOOKING_INCLUDE_DETAIL = {
   ...BOOKING_INCLUDE_SUMMARY,
+  manualPayment: {
+    include: { proofs: { orderBy: [{ submittedAt: 'asc' as const }] } },
+  },
   handovers: {
     orderBy: [{ createdAt: 'asc' as const }],
   },
@@ -212,6 +220,19 @@ export class BookingService {
       addonsAmount: booking.addonsAmount,
       depositAmount: booking.depositAmount,
       totalDueAtPickup: booking.totalAmount,
+      payment: booking.manualPayment
+        ? {
+            id: booking.manualPayment.id,
+            amount: booking.manualPayment.amount,
+            status: booking.manualPayment.status,
+            rejectionReason:
+              booking.manualPayment.proofs[0]?.rejectionReason ?? null,
+          }
+        : {
+            amount: booking.totalAmount,
+            status: 'UNPAID',
+            rejectionReason: null,
+          },
       contactName: booking.contactName,
       contactPhone: booking.contactPhone,
       note: booking.note,
@@ -280,9 +301,36 @@ export class BookingService {
       return entry;
     });
 
+    const manualPayment = booking.manualPayment
+      ? {
+          id: booking.manualPayment.id,
+          amount: booking.manualPayment.amount,
+          status: booking.manualPayment.status,
+          proofs: await Promise.all(
+            booking.manualPayment.proofs.map(async (proof) => ({
+              id: proof.id,
+              status: proof.status,
+              submittedAt: proof.submittedAt.toISOString(),
+              reviewedAt: proof.reviewedAt?.toISOString() ?? null,
+              reviewedBy: isStaff ? proof.reviewedBy : undefined,
+              rejectionReason: proof.rejectionReason,
+              imageUrl: await this.storageService.createSignedUrl(
+                this.configService.get<string>(
+                  'STORAGE_BUCKET_PAYMENT_PROOFS',
+                  'payment-proofs',
+                ),
+                proof.path,
+                300,
+              ),
+            })),
+          ),
+        }
+      : { amount: booking.totalAmount, status: 'UNPAID', proofs: [] };
+
     return {
       ...base,
       payments,
+      payment: manualPayment,
       handovers,
       setupPlan: null,
     };

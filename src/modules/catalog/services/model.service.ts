@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, UnitCondition, UnitStatus } from '@prisma/client';
+import { CameraType, Prisma, UnitCondition, UnitStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { writeAuditLog } from '../../../common/utils/audit.util';
 import { PrismaService } from '../../../infra/database/prisma.service';
@@ -43,6 +43,7 @@ const ACTIVE_MODEL_CACHE_INCLUDE = {
   category: {
     select: { id: true, slug: true, name: true, parentId: true },
   },
+  specs: true,
   images: {
     where: { kind: 'PRODUCT' as const },
     orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }],
@@ -105,6 +106,34 @@ export class ModelService {
     @Inject(STORAGE_SERVICE)
     private readonly storageService: StorageService,
   ) {}
+
+  private async assertCameraCategoryMatchesType(
+    kind: string,
+    cameraType: CameraType | null | undefined,
+    categoryId: string,
+  ): Promise<void> {
+    if (kind !== 'CAMERA') return;
+    const expectedParentSlug: Record<CameraType, string> = {
+      FILM: 'may-film',
+      DIGITAL: 'may-digital',
+      INSTANT: 'may-instant',
+    };
+    if (!cameraType) {
+      throw new BadRequestException('Vui lòng chọn nhóm máy ảnh.');
+    }
+    const category = await this.prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { slug: true, parent: { select: { slug: true } } },
+    });
+    const matches = cameraType === CameraType.INSTANT
+      ? category?.slug === expectedParentSlug[cameraType] || category?.parent?.slug === expectedParentSlug[cameraType]
+      : category?.parent?.slug === expectedParentSlug[cameraType];
+    if (!matches) {
+      throw new BadRequestException(
+        'Loại thiết bị phải thuộc đúng nhóm Film, Digital hoặc Instant đã chọn.',
+      );
+    }
+  }
 
   public invalidateCategoriesCache(): void {
     this.allCategoriesCache = null;
@@ -421,8 +450,25 @@ export class ModelService {
       (query.minPrice === undefined || m.pricePerDay >= query.minPrice) &&
       (query.maxPrice === undefined || m.pricePerDay <= query.maxPrice);
 
+    const sensorSizeOf = (model: (typeof baseFiltered)[number]) => {
+      const value = model.specs?.specs;
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      const sensorSize = value.sensorSize;
+      return typeof sensorSize === 'string' && sensorSize.trim()
+        ? sensorSize.trim()
+        : null;
+    };
+    const matchesFacetValue = (value: string | null, requested?: string) =>
+      !requested ||
+      value?.toLocaleLowerCase() === requested.trim().toLocaleLowerCase();
+
     const finalFiltered = baseFiltered.filter(
-      (m) => matchesCategory(m) && matchesBrand(m) && matchesPrice(m),
+      (m) =>
+        matchesCategory(m) &&
+        matchesBrand(m) &&
+        matchesPrice(m) &&
+        matchesFacetValue(m.filmFormat, query.filmFormat) &&
+        matchesFacetValue(sensorSizeOf(m), query.sensorSize),
     );
 
     const forPriceFacet = baseFiltered.filter(
@@ -504,6 +550,19 @@ export class ModelService {
       }
     }
 
+    const filmFormatCounts = new Map<string, number>();
+    const sensorSizeCounts = new Map<string, number>();
+    for (const model of forCategoryFacet) {
+      if (model.filmFormat?.trim()) {
+        const value = model.filmFormat.trim();
+        filmFormatCounts.set(value, (filmFormatCounts.get(value) ?? 0) + 1);
+      }
+      const sensorSize = sensorSizeOf(model);
+      if (sensorSize) {
+        sensorSizeCounts.set(sensorSize, (sensorSizeCounts.get(sensorSize) ?? 0) + 1);
+      }
+    }
+
     const total = finalFiltered.length;
     const paged = finalFiltered.slice((page - 1) * pageSize, page * pageSize);
 
@@ -529,6 +588,8 @@ export class ModelService {
           name: m.name,
           kind: m.kind,
           cameraType: m.cameraType,
+          filmFormat: m.filmFormat,
+          sensorSize: sensorSizeOf(m),
           brand: m.brand,
           category: { slug: m.category.slug, name: m.category.name },
           mount: m.mount,
@@ -553,6 +614,8 @@ export class ModelService {
         price: priceFacet,
         categories: Array.from(categoryCounts.values()),
         brands: Array.from(brandCounts.values()),
+        filmFormats: Array.from(filmFormatCounts, ([value, count]) => ({ value, count })),
+        sensorSizes: Array.from(sensorSizeCounts, ([value, count]) => ({ value, count })),
       },
     };
   }
@@ -800,6 +863,11 @@ export class ModelService {
 
   async createAdminModel(dto: CreateModelDto, actorId: string) {
     try {
+      await this.assertCameraCategoryMatchesType(
+        dto.kind,
+        dto.cameraType,
+        dto.categoryId,
+      );
       const created = await this.prisma.$transaction(async (tx) => {
         const model = await tx.rentalModel.create({
           data: {
@@ -887,6 +955,12 @@ export class ModelService {
         details: {},
       });
     }
+
+    await this.assertCameraCategoryMatchesType(
+      dto.kind ?? existing.kind,
+      dto.cameraType ?? existing.cameraType,
+      dto.categoryId ?? existing.categoryId,
+    );
 
     try {
       await this.prisma.$transaction(async (tx) => {

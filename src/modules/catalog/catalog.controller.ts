@@ -51,6 +51,14 @@ export class CatalogController {
   }
 
   @Public()
+  @Get('payment-settings')
+  @Header('Cache-Control', 'no-store, max-age=0')
+  @ApiOperation({ summary: 'Cấu hình chuyển khoản công khai, không lưu cache' })
+  getPaymentSettings() {
+    return this.catalogService.getPublicPaymentSettings();
+  }
+
+  @Public()
   @Get('categories')
   @Header(
     'Cache-Control',

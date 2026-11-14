@@ -23,6 +23,7 @@ import {
   CreateModelDto,
   CreateModelImageDto,
   ImagePresignDto,
+  PaymentQrPresignDto,
   PaginationQueryDto,
   ReorderImagesDto,
   UpdateBranchDto,
@@ -251,5 +252,11 @@ export class CatalogAdminController {
     @CurrentUser('userId') actorId: string,
   ) {
     return this.catalogService.updateContactSettings(dto, actorId);
+  }
+
+  @Post('payment-settings/qr/presign')
+  @ApiOperation({ summary: 'Tạo liên kết tải ảnh QR thanh toán' })
+  presignPaymentQr(@Body() dto: PaymentQrPresignDto) {
+    return this.catalogService.presignPaymentQr(dto.contentType, dto.fileSize);
   }
 }

@@ -1,10 +1,13 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { writeAuditLog } from '../../../common/utils/audit.util';
 import { PrismaService } from '../../../infra/database/prisma.service';
+import {
+  STORAGE_SERVICE,
+  StorageService,
+} from '../../../infra/storage/storage.service';
+import { randomUUID } from 'crypto';
 import { UpdateContactSettingsDto } from '../dto/catalog.dto';
 
 const CONTACT_SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -30,6 +33,25 @@ export interface PublicContactSettingsResponse {
     name: string;
     phone: string;
   }>;
+  payment: {
+    enabled: boolean;
+    bankName: string | null;
+    accountNumber: string | null;
+    accountName: string | null;
+    qrImageUrl: string | null;
+    qrPath: string | null;
+    instructions: string | null;
+  };
+}
+
+export interface PublicPaymentSettingsResponse {
+  enabled: boolean;
+  bankName: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  qrImageUrl: string | null;
+  qrPath: string | null;
+  instructions: string | null;
 }
 
 @Injectable()
@@ -39,7 +61,11 @@ export class ContactSettingsService {
     expiresAt: number;
   } | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
+  ) {}
 
   public invalidateContactSettingsCache(): void {
     this.contactSettingsCache = null;
@@ -108,6 +134,7 @@ export class ContactSettingsService {
         name: b.name,
         phone: b.phone,
       })),
+      payment: this.toPublicPaymentSettings(row),
     };
 
     this.contactSettingsCache = {
@@ -116,6 +143,40 @@ export class ContactSettingsService {
     };
 
     return data;
+  }
+
+  async getPublicPaymentSettings(): Promise<PublicPaymentSettingsResponse> {
+    const row = await this.prisma.contactSetting.findUnique({
+      where: { id: CONTACT_SETTINGS_DEFAULT_ID },
+    });
+    return this.toPublicPaymentSettings(row);
+  }
+
+  private toPublicPaymentSettings(row: {
+    paymentEnabled: boolean;
+    paymentBankName: string | null;
+    paymentAccountNumber: string | null;
+    paymentAccountName: string | null;
+    paymentQrPath: string | null;
+    paymentInstructions: string | null;
+  } | null): PublicPaymentSettingsResponse {
+    return {
+      enabled: Boolean(row?.paymentEnabled),
+      bankName: row?.paymentBankName ?? null,
+      accountNumber: row?.paymentAccountNumber ?? null,
+      accountName: row?.paymentAccountName ?? null,
+      qrImageUrl: row?.paymentQrPath
+        ? this.storage.getPublicUrl(
+            this.config.get<string>(
+              'STORAGE_BUCKET_PAYMENT_ASSETS',
+              'payment-assets',
+            ),
+            row.paymentQrPath,
+          )
+        : null,
+      qrPath: row?.paymentQrPath ?? null,
+      instructions: row?.paymentInstructions ?? null,
+    };
   }
 
   async updateContactSettings(
@@ -145,7 +206,6 @@ export class ContactSettingsService {
         : dto.is_chat_enabled !== undefined
           ? dto.is_chat_enabled
           : dto.chatEnabled;
-
     const normalizeNullable = (
       val: string | null | undefined,
     ): string | null | undefined => {
@@ -161,6 +221,36 @@ export class ContactSettingsService {
     const instagramHandle = normalizeNullable(rawInstagramHandle);
     const hotline = normalizeNullable(rawHotline);
     const welcomeMessage = normalizeNullable(rawWelcomeMessage);
+    const paymentBankName = normalizeNullable(dto.paymentBankName);
+    const paymentAccountNumber = normalizeNullable(dto.paymentAccountNumber);
+    const paymentAccountName = normalizeNullable(dto.paymentAccountName);
+    const paymentQrPath = normalizeNullable(dto.paymentQrPath);
+    const paymentInstructions = normalizeNullable(dto.paymentInstructions);
+
+    if (
+      dto.paymentEnabled &&
+      (!paymentBankName ||
+        !paymentAccountNumber ||
+        !paymentAccountName ||
+        !paymentQrPath)
+    ) {
+      fields.paymentEnabled =
+        'Cần điền đầy đủ ngân hàng, số tài khoản, chủ tài khoản và ảnh QR trước khi bật thanh toán.';
+    }
+    if (paymentQrPath) {
+      await this.storage.assertOwnedFile(
+        this.config.get<string>(
+          'STORAGE_BUCKET_PAYMENT_ASSETS',
+          'payment-assets',
+        ),
+        paymentQrPath,
+        'payment-qr/',
+        {
+          maxBytes: 5 * 1024 * 1024,
+          allowedMimeTypes: ['image/jpeg', 'image/png'],
+        },
+      );
+    }
 
     if (typeof zaloOaId === 'string') {
       if (this.containsUrlOrHtml(zaloOaId) || !/^\d{1,30}$/.test(zaloOaId)) {
@@ -230,6 +320,12 @@ export class ContactSettingsService {
       hotline: hotline ?? null,
       welcomeMessage: welcomeMessage ?? null,
       isChatEnabled: rawChatEnabled ?? false,
+      paymentBankName: paymentBankName ?? null,
+      paymentAccountNumber: paymentAccountNumber ?? null,
+      paymentAccountName: paymentAccountName ?? null,
+      paymentQrPath: paymentQrPath ?? null,
+      paymentInstructions: paymentInstructions ?? null,
+      paymentEnabled: dto.paymentEnabled ?? false,
       updatedBy: actorId,
     };
 
@@ -246,6 +342,17 @@ export class ContactSettingsService {
     if (rawChatEnabled !== undefined) {
       updateData.isChatEnabled = rawChatEnabled;
     }
+    if (paymentBankName !== undefined)
+      updateData.paymentBankName = paymentBankName;
+    if (paymentAccountNumber !== undefined)
+      updateData.paymentAccountNumber = paymentAccountNumber;
+    if (paymentAccountName !== undefined)
+      updateData.paymentAccountName = paymentAccountName;
+    if (paymentQrPath !== undefined) updateData.paymentQrPath = paymentQrPath;
+    if (paymentInstructions !== undefined)
+      updateData.paymentInstructions = paymentInstructions;
+    if (dto.paymentEnabled !== undefined)
+      updateData.paymentEnabled = dto.paymentEnabled;
 
     await this.prisma.$transaction(async (tx) => {
       const saved = await tx.contactSetting.upsert({
@@ -267,6 +374,7 @@ export class ContactSettingsService {
           hotline: saved.hotline,
           welcomeMessage: saved.welcomeMessage,
           isChatEnabled: saved.isChatEnabled,
+          paymentEnabled: saved.paymentEnabled,
         },
       });
     });
@@ -274,5 +382,34 @@ export class ContactSettingsService {
     this.invalidateContactSettingsCache();
     return this.getPublicContactSettings();
   }
-}
 
+  async presignPaymentQr(contentType: string, fileSize: number) {
+    if (!['image/jpeg', 'image/png'].includes(contentType)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Chỉ hỗ trợ ảnh JPG hoặc PNG.',
+        details: {},
+      });
+    }
+    if (
+      !Number.isInteger(fileSize) ||
+      fileSize < 1 ||
+      fileSize > 5 * 1024 * 1024
+    ) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Ảnh QR tối đa 5 MB.',
+        details: {},
+      });
+    }
+    const ext = contentType === 'image/png' ? 'png' : 'jpg';
+    const path = `payment-qr/${randomUUID()}.${ext}`;
+    return this.storage.createUploadUrl(
+      this.config.get<string>(
+        'STORAGE_BUCKET_PAYMENT_ASSETS',
+        'payment-assets',
+      ),
+      path,
+    );
+  }
+}

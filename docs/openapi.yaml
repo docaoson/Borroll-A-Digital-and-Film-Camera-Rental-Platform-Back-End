@@ -1,2416 +1,4153 @@
-openapi: 3.0.0
-paths:
-  /api/v1/health:
-    get:
-      operationId: HealthController_check
-      parameters: []
-      responses:
-        '200':
-          description: System health status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-                  database:
-                    type: string
-                    enum:
-                      - up
-                      - down
-                    example: up
-      summary: Health check system and database
-      tags:
-        - Health
-  /api/v1/auth/register:
-    post:
-      operationId: IdentityController_register
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterDto'
-      responses:
-        '201':
-          description: ''
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
-      summary: Đăng ký tài khoản người dùng
-      tags:
-        - Auth & Identity
-  /api/v1/auth/login:
-    post:
-      operationId: IdentityController_login
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginDto'
-      responses:
-        '200':
-          description: ''
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
-      summary: Đăng nhập tài khoản
-      tags:
-        - Auth & Identity
-  /api/v1/auth/refresh:
-    post:
-      operationId: IdentityController_refresh
-      parameters: []
-      responses:
-        '200':
-          description: ''
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  accessToken:
-                    type: string
-      summary: Làm mới Access Token qua cookie Refresh Token
-      tags:
-        - Auth & Identity
-  /api/v1/auth/logout:
-    post:
-      operationId: IdentityController_logout
-      parameters: []
-      responses:
-        '204':
-          description: ''
-      summary: Đăng xuất tài khoản
-      tags:
-        - Auth & Identity
-  /api/v1/me:
-    get:
-      operationId: IdentityController_getMe
-      parameters: []
-      responses:
-        '200':
-          description: ''
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MeResponse'
-      security:
-        - bearer: []
-      summary: Lấy thông tin cá nhân hiện tại
-      tags:
-        - Auth & Identity
-    patch:
-      operationId: IdentityController_updateMe
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateProfileDto'
-      responses:
-        '200':
-          description: ''
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MeResponse'
-      security:
-        - bearer: []
-      summary: Cập nhật thông tin cá nhân
-      tags:
-        - Auth & Identity
-  /api/v1/me/avatar/presign:
-    post:
-      operationId: IdentityController_presignAvatar
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AvatarPresignDto'
-      responses:
-        '200':
-          description: ''
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AvatarPresignResponse'
-      security:
-        - bearer: []
-      summary: Xin URL tải ảnh đại diện lên Storage
-      tags:
-        - Auth & Identity
-  /api/v1/staff/units:
-    get:
-      operationId: InventoryController_listStaffUnits
-      parameters:
-        - name: branch
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: model
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: status
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - AVAILABLE
-              - MAINTENANCE
-              - RETIRED
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Danh sách từng chiếc máy trong kho
-      tags:
-        - Inventory (Staff & Admin)
-  /api/v1/staff/unit-blocks:
-    get:
-      operationId: InventoryController_listUnitBlocks
-      parameters:
-        - name: unitId
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: from
-          required: false
-          in: query
-          schema:
-            example: '2026-12-01'
-            type: string
-        - name: to
-          required: false
-          in: query
-          schema:
-            example: '2026-12-31'
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Danh sách lịch khóa bảo trì
-      tags:
-        - Inventory (Staff & Admin)
-    post:
-      operationId: InventoryController_createUnitBlock
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateUnitBlockDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      summary: Tạo lịch khóa bảo trì cho một chiếc máy
-      tags:
-        - Inventory (Staff & Admin)
-  /api/v1/staff/unit-blocks/{id}:
-    delete:
-      operationId: InventoryController_deleteUnitBlock
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '204':
-          description: ''
-      security:
-        - bearer: []
-      summary: Xóa lịch khóa bảo trì
-      tags:
-        - Inventory (Staff & Admin)
-  /api/v1/admin/units:
-    get:
-      operationId: InventoryController_listAdminUnits
-      parameters:
-        - name: branch
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: model
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: status
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - AVAILABLE
-              - MAINTENANCE
-              - RETIRED
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Danh sách từng chiếc máy'
-      tags:
-        - Inventory (Staff & Admin)
-    post:
-      operationId: InventoryController_createAdminUnit
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateUnitDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Tạo chiếc máy mới'
-      tags:
-        - Inventory (Staff & Admin)
-  /api/v1/admin/units/{id}:
-    get:
-      operationId: InventoryController_getAdminUnit
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Chi tiết chiếc máy'
-      tags:
-        - Inventory (Staff & Admin)
-    patch:
-      operationId: InventoryController_updateAdminUnit
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateUnitDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Cập nhật chiếc máy'
-      tags:
-        - Inventory (Staff & Admin)
-    delete:
-      operationId: InventoryController_deleteAdminUnit
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Xóa hoặc ngừng sử dụng chiếc máy'
-      tags:
-        - Inventory (Staff & Admin)
-  /api/v1/branches:
-    get:
-      operationId: CatalogController_getBranches
-      parameters: []
-      responses:
-        '200':
-          description: ''
-      summary: Danh sách chi nhánh đang hoạt động
-      tags:
-        - Catalog & Favorites
-  /api/v1/categories:
-    get:
-      operationId: CatalogController_getCategories
-      parameters: []
-      responses:
-        '200':
-          description: ''
-      summary: Cây danh mục thiết bị
-      tags:
-        - Catalog & Favorites
-  /api/v1/brands:
-    get:
-      operationId: CatalogController_getBrands
-      parameters: []
-      responses:
-        '200':
-          description: ''
-      summary: Danh sách thương hiệu
-      tags:
-        - Catalog & Favorites
-  /api/v1/film-products:
-    get:
-      operationId: CatalogController_getFilmProducts
-      parameters: []
-      responses:
-        '200':
-          description: ''
-      summary: Danh sách film bán kèm
-      tags:
-        - Catalog & Favorites
-  /api/v1/contact-settings:
-    get:
-      operationId: CatalogController_getContactSettings
-      parameters: []
-      responses:
-        '200':
-          description: ''
-      summary: Cấu hình liên hệ công khai & danh sách chi nhánh
-      tags:
-        - Catalog & Favorites
-  /api/v1/models:
-    get:
-      operationId: CatalogController_listModels
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: category
-          required: false
-          in: query
-          description: Comma-separated category slugs
-          schema:
-            type: string
-        - name: brand
-          required: false
-          in: query
-          description: Comma-separated brand slugs
-          schema:
-            type: string
-        - name: kind
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - CAMERA
-              - LENS
-              - ACCESSORY
-        - name: cameraType
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - DIGITAL
-              - FILM
-              - INSTANT
-        - name: mount
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: minPrice
-          required: false
-          in: query
-          schema:
-            type: number
-        - name: maxPrice
-          required: false
-          in: query
-          schema:
-            type: number
-        - name: branch
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: from
-          required: false
-          in: query
-          schema:
-            example: '2026-12-10'
-            type: string
-        - name: to
-          required: false
-          in: query
-          schema:
-            example: '2026-12-12'
-            type: string
-        - name: featured
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: excludeId
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: sort
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - default
-              - price_asc
-              - price_desc
-              - newest
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      summary: Tìm kiếm và lọc mẫu máy cho thuê
-      tags:
-        - Catalog & Favorites
-  /api/v1/models/{id}/availability:
-    get:
-      operationId: CatalogController_getModelAvailability
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-        - name: branch
-          required: true
-          in: query
-          schema:
-            example: tay-ho
-            type: string
-        - name: month
-          required: true
-          in: query
-          schema:
-            example: 2026-12
-            type: string
-      responses:
-        '200':
-          description: ''
-      summary: Lịch ngày hết máy theo tháng và chi nhánh
-      tags:
-        - Catalog & Favorites
-  /api/v1/models/{slug}:
-    get:
-      operationId: CatalogController_getModelBySlug
-      parameters:
-        - name: slug
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      summary: Chi tiết mẫu máy theo slug
-      tags:
-        - Catalog & Favorites
-  /api/v1/favorites:
-    get:
-      operationId: CatalogController_listFavorites
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Danh sách mẫu máy yêu thích
-      tags:
-        - Catalog & Favorites
-  /api/v1/favorites/{modelId}:
-    post:
-      operationId: CatalogController_addFavorite
-      parameters:
-        - name: modelId
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '204':
-          description: ''
-      security:
-        - bearer: []
-      summary: Thêm mẫu máy vào yêu thích
-      tags:
-        - Catalog & Favorites
-    delete:
-      operationId: CatalogController_removeFavorite
-      parameters:
-        - name: modelId
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '204':
-          description: ''
-      security:
-        - bearer: []
-      summary: Xóa mẫu máy khỏi yêu thích
-      tags:
-        - Catalog & Favorites
-  /api/v1/admin/models:
-    get:
-      operationId: CatalogAdminController_listModels
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Danh sách mẫu máy'
-      tags:
-        - Admin Catalog
-    post:
-      operationId: CatalogAdminController_createModel
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateModelDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Tạo mẫu máy mới'
-      tags:
-        - Admin Catalog
-  /api/v1/admin/models/{id}:
-    get:
-      operationId: CatalogAdminController_getModel
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Chi tiết mẫu máy'
-      tags:
-        - Admin Catalog
-    patch:
-      operationId: CatalogAdminController_updateModel
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateModelDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Cập nhật mẫu máy'
-      tags:
-        - Admin Catalog
-    delete:
-      operationId: CatalogAdminController_deleteModel
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Ẩn hoặc xóa mẫu máy'
-      tags:
-        - Admin Catalog
-  /api/v1/admin/models/{id}/specs:
-    put:
-      operationId: CatalogAdminController_updateSpecs
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateModelSpecsDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Cập nhật thông số kỹ thuật mẫu máy'
-      tags:
-        - Admin Catalog
-  /api/v1/admin/models/{id}/images/presign:
-    post:
-      operationId: CatalogAdminController_presignImage
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ImagePresignDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Xin URL tải ảnh mẫu máy lên Storage'
-      tags:
-        - Admin Catalog
-  /api/v1/admin/models/{id}/images:
-    post:
-      operationId: CatalogAdminController_addImage
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateModelImageDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Đăng ký ảnh mẫu máy đã tải lên'
-      tags:
-        - Admin Catalog
-  /api/v1/admin/models/{id}/images/order:
-    patch:
-      operationId: CatalogAdminController_reorderImages
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReorderImagesDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Sắp xếp thứ tự ảnh mẫu máy'
-      tags:
-        - Admin Catalog
-  /api/v1/admin/models/{id}/images/{imageId}:
-    delete:
-      operationId: CatalogAdminController_deleteImage
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-        - name: imageId
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Xóa ảnh mẫu máy'
-      tags:
-        - Admin Catalog
-  /api/v1/admin/categories:
-    get:
-      operationId: CatalogAdminController_listCategories
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    post:
-      operationId: CatalogAdminController_createCategory
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateCategoryDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/categories/{id}:
-    patch:
-      operationId: CatalogAdminController_updateCategory
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateCategoryDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    delete:
-      operationId: CatalogAdminController_deleteCategory
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/brands:
-    get:
-      operationId: CatalogAdminController_listBrands
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    post:
-      operationId: CatalogAdminController_createBrand
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateBrandDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/brands/{id}:
-    patch:
-      operationId: CatalogAdminController_updateBrand
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateBrandDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    delete:
-      operationId: CatalogAdminController_deleteBrand
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/branches:
-    get:
-      operationId: CatalogAdminController_listBranches
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    post:
-      operationId: CatalogAdminController_createBranch
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateBranchDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/branches/{id}:
-    patch:
-      operationId: CatalogAdminController_updateBranch
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateBranchDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    delete:
-      operationId: CatalogAdminController_deleteBranch
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/film-products:
-    get:
-      operationId: CatalogAdminController_listFilmProducts
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    post:
-      operationId: CatalogAdminController_createFilmProduct
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateFilmProductDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/film-products/{id}:
-    patch:
-      operationId: CatalogAdminController_updateFilmProduct
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateFilmProductDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-    delete:
-      operationId: CatalogAdminController_deleteFilmProduct
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      tags:
-        - Admin Catalog
-  /api/v1/admin/contact-settings:
-    put:
-      operationId: CatalogAdminController_updateContactSettings
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateContactSettingsDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Cập nhật cấu hình liên hệ'
-      tags:
-        - Admin Catalog
-  /api/v1/bookings/quote:
-    post:
-      operationId: BookingController_quote
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/QuoteBookingDto'
-      responses:
-        '200':
-          description: ''
-      summary: Báo giá và kiểm tra còn trống (không giữ chỗ)
-      tags:
-        - Bookings
-  /api/v1/bookings:
-    post:
-      operationId: BookingController_createBooking
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateBookingDto'
-      responses:
-        '201':
-          description: ''
-      security:
-        - bearer: []
-      summary: Tạo yêu cầu đặt thuê (PENDING)
-      tags:
-        - Bookings
-    get:
-      operationId: BookingController_listMyBookings
-      parameters:
-        - name: status
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - PENDING
-              - CONFIRMED
-              - PICKED_UP
-              - RETURNED
-              - COMPLETED
-              - REJECTED
-              - CANCELLED
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Danh sách đơn thuê của tôi
-      tags:
-        - Bookings
-  /api/v1/bookings/{id}:
-    get:
-      operationId: BookingController_getBookingDetail
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Chi tiết đơn thuê
-      tags:
-        - Bookings
-  /api/v1/bookings/{id}/cancel:
-    post:
-      operationId: BookingController_cancelMyBooking
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CancelBookingDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Khách hàng hủy đơn thuê
-      tags:
-        - Bookings
-  /api/v1/staff/dashboard:
-    get:
-      operationId: OperationsController_getDashboard
-      parameters:
-        - name: branch
-          required: false
-          in: query
-          schema:
-            example: tay-ho
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Tổng quan vận hành cửa hàng trong ngày
-      tags:
-        - Staff Operations
-  /api/v1/staff/bookings:
-    get:
-      operationId: OperationsController_listBookings
-      parameters:
-        - name: status
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - PENDING
-              - CONFIRMED
-              - PICKED_UP
-              - RETURNED
-              - COMPLETED
-              - REJECTED
-              - CANCELLED
-        - name: branch
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: date
-          required: false
-          in: query
-          schema:
-            example: '2026-12-12'
-            type: string
-        - name: overdue
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - 'true'
-              - 'false'
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Danh sách đơn thuê cho nhân viên
-      tags:
-        - Staff Operations
-  /api/v1/staff/handover-photos/presign:
-    post:
-      operationId: OperationsController_presignHandoverPhoto
-      parameters: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/HandoverPhotoPresignDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Xin URL tải ảnh biên bản giao nhận lên Storage
-      tags:
-        - Staff Operations
-  /api/v1/staff/bookings/{id}/confirm:
-    post:
-      operationId: OperationsController_confirmBooking
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Xác nhận đơn thuê (PENDING -> CONFIRMED)
-      tags:
-        - Staff Operations
-  /api/v1/staff/bookings/{id}/reject:
-    post:
-      operationId: OperationsController_rejectBooking
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReasonBodyDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Từ chối đơn thuê (PENDING -> REJECTED)
-      tags:
-        - Staff Operations
-  /api/v1/staff/bookings/{id}/cancel:
-    post:
-      operationId: OperationsController_cancelBooking
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReasonBodyDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Nhân viên hủy đơn thuê
-      tags:
-        - Staff Operations
-  /api/v1/staff/bookings/{id}/pickup:
-    post:
-      operationId: OperationsController_pickupBooking
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PickupBookingDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Giao máy & thu tiền (CONFIRMED -> PICKED_UP)
-      tags:
-        - Staff Operations
-  /api/v1/staff/bookings/{id}/return:
-    post:
-      operationId: OperationsController_returnBooking
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReturnBookingDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Nhận lại máy (PICKED_UP -> RETURNED)
-      tags:
-        - Staff Operations
-  /api/v1/staff/bookings/{id}/complete:
-    post:
-      operationId: OperationsController_completeBooking
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CompleteBookingDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: Hoàn tất đơn & hoàn cọc (RETURNED -> COMPLETED)
-      tags:
-        - Staff Operations
-  /api/v1/admin/users:
-    get:
-      operationId: AdminController_listUsers
-      parameters:
-        - name: q
-          required: false
-          in: query
-          schema:
-            type: string
-        - name: role
-          required: false
-          in: query
-          schema:
-            type: string
-            enum:
-              - RENTER
-              - STAFF
-              - ADMIN
-        - name: page
-          required: false
-          in: query
-          schema:
-            default: 1
-            type: number
-        - name: pageSize
-          required: false
-          in: query
-          schema:
-            default: 20
-            type: number
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Danh sách người dùng'
-      tags:
-        - Admin Users
-  /api/v1/admin/users/{id}:
-    patch:
-      operationId: AdminController_updateUser
-      parameters:
-        - name: id
-          required: true
-          in: path
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateAdminUserDto'
-      responses:
-        '200':
-          description: ''
-      security:
-        - bearer: []
-      summary: 'Admin: Cập nhật vai trò hoặc trạng thái người dùng'
-      tags:
-        - Admin Users
-info:
-  title: Borroll API
-  description: Borroll Camera Rental Store Backend API
-  version: '1.0'
-  contact: {}
-tags: []
-servers: []
-components:
-  securitySchemes:
-    bearer:
-      scheme: bearer
-      bearerFormat: JWT
-      type: http
-  schemas:
-    RegisterDto:
-      type: object
-      properties:
-        fullName:
-          type: string
-          example: Nguyễn Văn A
-        email:
-          type: string
-          example: a@example.com
-        phone:
-          type: string
-          example: '0912345678'
-        password:
-          type: string
-          example: matkhau123
-          minLength: 8
-      required:
-        - fullName
-        - email
-        - phone
-        - password
-    AuthUserEntity:
-      type: object
-      properties:
-        id:
-          type: string
-          example: clx...
-        fullName:
-          type: string
-          example: Nguyễn Văn A
-        email:
-          type: string
-          example: a@example.com
-        roles:
-          example:
-            - RENTER
-          type: array
-          items:
-            type: string
-      required:
-        - id
-        - fullName
-        - email
-        - roles
-    AuthResponse:
-      type: object
-      properties:
-        accessToken:
-          type: string
-          example: eyJhbGciOiJIUzI1Ni...
-        user:
-          $ref: '#/components/schemas/AuthUserEntity'
-      required:
-        - accessToken
-        - user
-    LoginDto:
-      type: object
-      properties:
-        email:
-          type: string
-          example: a@example.com
-        password:
-          type: string
-          example: matkhau123
-      required:
-        - email
-        - password
-    MeResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          example: clx...
-        fullName:
-          type: string
-          example: Nguyễn Văn A
-        email:
-          type: string
-          example: a@example.com
-        phone:
-          type: object
-          example: '0912345678'
-          nullable: true
-        avatarUrl:
-          type: object
-          example: null
-          nullable: true
-        roles:
-          example:
-            - RENTER
-          type: array
-          items:
-            type: string
-      required:
-        - id
-        - fullName
-        - email
-        - phone
-        - avatarUrl
-        - roles
-    UpdateProfileDto:
-      type: object
-      properties:
-        fullName:
-          type: string
-          example: Nguyễn Văn B
-        phone:
-          type: string
-          example: '0987654321'
-        avatarPath:
-          type: object
-          example: avatars/clx123/abc.jpg
-          nullable: true
-          description: >-
-            Đường dẫn ảnh đại diện nhận từ /me/avatar/presign, hoặc null để xóa
-            ảnh
-    AvatarPresignDto:
-      type: object
-      properties:
-        contentType:
-          type: string
-          example: image/jpeg
-          enum:
-            - image/jpeg
-            - image/png
-            - image/webp
-      required:
-        - contentType
-    AvatarPresignResponse:
-      type: object
-      properties:
-        uploadUrl:
-          type: string
-          example: https://...
-        path:
-          type: string
-          example: avatars/u1/abc.jpg
-        token:
-          type: string
-          example: eyJhbGciOi...
-      required:
-        - uploadUrl
-        - path
-        - token
-    CreateUnitBlockDto:
-      type: object
-      properties:
-        unitId:
-          type: string
-        startDate:
-          type: string
-          example: '2026-12-10'
-        endDate:
-          type: string
-          example: '2026-12-12'
-        reason:
-          type: string
-          example: Thay pin, vệ sinh
-      required:
-        - unitId
-        - startDate
-        - endDate
-        - reason
-    CreateUnitDto:
-      type: object
-      properties:
-        modelId:
-          type: string
-        branchId:
-          type: string
-        serialNumber:
-          type: string
-          example: OXA-0042
-        condition:
-          type: string
-          enum:
-            - EXCELLENT
-            - GOOD
-            - FAIR
-          default: EXCELLENT
-        status:
-          type: string
-          enum:
-            - AVAILABLE
-            - MAINTENANCE
-            - RETIRED
-          default: AVAILABLE
-        notes:
-          type: object
-        purchasedAt:
-          type: object
-      required:
-        - modelId
-        - branchId
-        - serialNumber
-    UpdateUnitDto:
-      type: object
-      properties:
-        modelId:
-          type: string
-        branchId:
-          type: string
-        serialNumber:
-          type: string
-        condition:
-          type: string
-          enum:
-            - EXCELLENT
-            - GOOD
-            - FAIR
-        status:
-          type: string
-          enum:
-            - AVAILABLE
-            - MAINTENANCE
-            - RETIRED
-        notes:
-          type: object
-        purchasedAt:
-          type: object
-    InspectionNoteItemDto:
-      type: object
-      properties:
-        label:
-          type: string
-        ok:
-          type: boolean
-      required:
-        - label
-        - ok
-    CreateModelDto:
-      type: object
-      properties:
-        kind:
-          type: string
-          enum:
-            - CAMERA
-            - LENS
-            - ACCESSORY
-        categoryId:
-          type: string
-        brandId:
-          type: string
-        name:
-          type: string
-        slug:
-          type: string
-        description:
-          type: string
-        cameraType:
-          type: string
-          enum:
-            - DIGITAL
-            - FILM
-            - INSTANT
-          nullable: true
-        mount:
-          type: object
-          nullable: true
-        filmFormat:
-          type: object
-          nullable: true
-        pricePerDay:
-          type: number
-        pricePerWeek:
-          type: object
-          nullable: true
-        deposit:
-          type: number
-        isActive:
-          type: boolean
-          default: true
-        isFeatured:
-          type: boolean
-          default: false
-        lastInspectedAt:
-          type: object
-          nullable: true
-        inspectionNotes:
-          nullable: true
-          type: array
-          items:
-            $ref: '#/components/schemas/InspectionNoteItemDto'
-      required:
-        - kind
-        - categoryId
-        - brandId
-        - name
-        - slug
-        - description
-        - pricePerDay
-        - deposit
-    UpdateModelDto:
-      type: object
-      properties:
-        kind:
-          type: string
-          enum:
-            - CAMERA
-            - LENS
-            - ACCESSORY
-        categoryId:
-          type: string
-        brandId:
-          type: string
-        name:
-          type: string
-        slug:
-          type: string
-        description:
-          type: string
-        cameraType:
-          type: string
-          enum:
-            - DIGITAL
-            - FILM
-            - INSTANT
-          nullable: true
-        mount:
-          type: object
-          nullable: true
-        filmFormat:
-          type: object
-          nullable: true
-        pricePerDay:
-          type: number
-        pricePerWeek:
-          type: object
-          nullable: true
-        deposit:
-          type: number
-        isActive:
-          type: boolean
-        isFeatured:
-          type: boolean
-        lastInspectedAt:
-          type: object
-          nullable: true
-        inspectionNotes:
-          nullable: true
-          type: array
-          items:
-            $ref: '#/components/schemas/InspectionNoteItemDto'
-    UpdateModelSpecsDto:
-      type: object
-      properties:
-        exposure:
-          type: object
-        controls:
-          type: array
-          items:
-            type: string
-        power:
-          type: string
-        quirks:
-          type: array
-          items:
-            type: string
-        beginnerNotes:
-          type: array
-          items:
-            type: string
-    ImagePresignDto:
-      type: object
-      properties:
-        contentType:
-          type: string
-          enum:
-            - image/jpeg
-            - image/png
-            - image/webp
-      required:
-        - contentType
-    CreateModelImageDto:
-      type: object
-      properties:
-        path:
-          type: string
-        kind:
-          type: string
-          enum:
-            - PRODUCT
-            - SAMPLE
-          default: PRODUCT
-        caption:
-          type: object
-          nullable: true
-        sampleLens:
-          type: object
-          nullable: true
-        sortOrder:
-          type: number
-          default: 0
-      required:
-        - path
-    ReorderImagesDto:
-      type: object
-      properties:
-        imageIds:
-          type: array
-          items:
-            type: string
-      required:
-        - imageIds
-    CreateCategoryDto:
-      type: object
-      properties:
-        name:
-          type: string
-        slug:
-          type: string
-        parentId:
-          type: object
-          nullable: true
-        sortOrder:
-          type: number
-          default: 0
-      required:
-        - name
-        - slug
-    UpdateCategoryDto:
-      type: object
-      properties:
-        name:
-          type: string
-        slug:
-          type: string
-        parentId:
-          type: object
-          nullable: true
-        sortOrder:
-          type: number
-    CreateBrandDto:
-      type: object
-      properties:
-        name:
-          type: string
-        slug:
-          type: string
-      required:
-        - name
-        - slug
-    UpdateBrandDto:
-      type: object
-      properties:
-        name:
-          type: string
-        slug:
-          type: string
-    CreateBranchDto:
-      type: object
-      properties:
-        name:
-          type: string
-        slug:
-          type: string
-        address:
-          type: string
-        phone:
-          type: string
-        openHours:
-          type: string
-        mapUrl:
-          type: object
-          nullable: true
-        isActive:
-          type: boolean
-          default: true
-      required:
-        - name
-        - slug
-        - address
-        - phone
-        - openHours
-    UpdateBranchDto:
-      type: object
-      properties:
-        name:
-          type: string
-        slug:
-          type: string
-        address:
-          type: string
-        phone:
-          type: string
-        openHours:
-          type: string
-        mapUrl:
-          type: object
-          nullable: true
-        isActive:
-          type: boolean
-    CreateFilmProductDto:
-      type: object
-      properties:
-        name:
-          type: string
-        iso:
-          type: number
-        format:
-          type: string
-        price:
-          type: number
-        inStock:
-          type: boolean
-          default: true
-      required:
-        - name
-        - iso
-        - format
-        - price
-    UpdateFilmProductDto:
-      type: object
-      properties:
-        name:
-          type: string
-        iso:
-          type: number
-        format:
-          type: string
-        price:
-          type: number
-        inStock:
-          type: boolean
-    BookingItemInputDto:
-      type: object
-      properties:
-        modelId:
-          type: string
-          example: clx...
-      required:
-        - modelId
-    BookingAddonInputDto:
-      type: object
-      properties:
-        filmProductId:
-          type: string
-          example: f1
-        quantity:
-          type: number
-          example: 2
-      required:
-        - filmProductId
-        - quantity
-    QuoteBookingDto:
-      type: object
-      properties:
-        branchSlug:
-          type: string
-          example: tay-ho
-        startDate:
-          type: string
-          example: '2026-12-12'
-        endDate:
-          type: string
-          example: '2026-12-15'
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/BookingItemInputDto'
-        addons:
-          default: []
-          type: array
-          items:
-            $ref: '#/components/schemas/BookingAddonInputDto'
-      required:
-        - branchSlug
-        - startDate
-        - endDate
-        - items
-    CreateBookingDto:
-      type: object
-      properties:
-        branchSlug:
-          type: string
-          example: tay-ho
-        startDate:
-          type: string
-          example: '2026-12-12'
-        endDate:
-          type: string
-          example: '2026-12-15'
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/BookingItemInputDto'
-        addons:
-          default: []
-          type: array
-          items:
-            $ref: '#/components/schemas/BookingAddonInputDto'
-        contactName:
-          type: string
-          example: Nguyễn Văn A
-        contactPhone:
-          type: string
-          example: '0912345678'
-        note:
-          type: object
-          nullable: true
-        setupPlanId:
-          type: object
-          nullable: true
-      required:
-        - branchSlug
-        - startDate
-        - endDate
-        - items
-        - contactName
-        - contactPhone
-    CancelBookingDto:
-      type: object
-      properties:
-        reason:
-          type: string
-    HandoverPhotoPresignDto:
-      type: object
-      properties:
-        bookingId:
-          type: string
-        contentType:
-          type: string
-          enum:
-            - image/jpeg
-            - image/png
-            - image/webp
-      required:
-        - bookingId
-        - contentType
-    ReasonBodyDto:
-      type: object
-      properties:
-        reason:
-          type: string
-          example: Hết máy dự phòng
-      required:
-        - reason
-    HandoverChecklistItemDto:
-      type: object
-      properties:
-        item:
-          type: string
-          example: Thân máy
-        ok:
-          type: boolean
-          example: true
-        note:
-          type: object
-          nullable: true
-      required:
-        - item
-        - ok
-    PickupPaymentItemDto:
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - DEPOSIT_RECEIVED
-            - RENTAL_RECEIVED
-        amount:
-          type: number
-          example: 3000000
-        method:
-          type: string
-          enum:
-            - CASH
-            - BANK_TRANSFER
-        note:
-          type: object
-          nullable: true
-      required:
-        - type
-        - amount
-        - method
-    PickupBookingDto:
-      type: object
-      properties:
-        checklist:
-          type: array
-          items:
-            $ref: '#/components/schemas/HandoverChecklistItemDto'
-        conditionNotes:
-          type: object
-          nullable: true
-        photoPaths:
-          type: array
-          items:
-            type: string
-        idChecked:
-          type: boolean
-          example: true
-        payments:
-          type: array
-          items:
-            $ref: '#/components/schemas/PickupPaymentItemDto'
-      required:
-        - checklist
-        - photoPaths
-        - idChecked
-        - payments
-    ReturnBookingDto:
-      type: object
-      properties:
-        checklist:
-          type: array
-          items:
-            $ref: '#/components/schemas/HandoverChecklistItemDto'
-        conditionNotes:
-          type: object
-          nullable: true
-        photoPaths:
-          type: array
-          items:
-            type: string
-      required:
-        - checklist
-        - photoPaths
-    CompleteChargeItemDto:
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - DAMAGE_CHARGE
-            - LATE_FEE
-        amount:
-          type: number
-          example: 200000
-        note:
-          type: object
-          nullable: true
-      required:
-        - type
-        - amount
-    CompleteBookingDto:
-      type: object
-      properties:
-        charges:
-          default: []
-          type: array
-          items:
-            $ref: '#/components/schemas/CompleteChargeItemDto'
-        refundMethod:
-          type: string
-          enum:
-            - CASH
-            - BANK_TRANSFER
-        note:
-          type: object
-          nullable: true
-      required:
-        - refundMethod
-    UpdateAdminUserDto:
-      type: object
-      properties:
-        roles:
-          type: array
-          items:
-            type: string
-            enum:
-              - RENTER
-              - STAFF
-              - ADMIN
-        status:
-          type: string
-          enum:
-            - ACTIVE
-            - SUSPENDED
-    UpdateContactSettingsDto:
-      type: object
-      properties:
-        zaloOaId:
-          type: string
-          nullable: true
-          example: '1234567890123456789'
-        zaloPhone:
-          type: string
-          nullable: true
-          example: '0912345678'
-        messengerPage:
-          type: string
-          nullable: true
-          example: borroll.camera
-        instagramHandle:
-          type: string
-          nullable: true
-          example: borroll.camera
-        hotline:
-          type: string
-          nullable: true
-          example: '0912345678'
-        welcomeMessage:
-          type: string
-          nullable: true
-          example: Xin chào! BORROLL có thể hỗ trợ gì cho bạn?
-        isChatEnabled:
-          type: boolean
-          example: true
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "System health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "database": {
+                      "type": "string",
+                      "enum": [
+                        "up",
+                        "down"
+                      ],
+                      "example": "up"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Health check system and database",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "operationId": "IdentityController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Đăng ký tài khoản người dùng",
+        "tags": [
+          "Auth & Identity"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "IdentityController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Đăng nhập tài khoản",
+        "tags": [
+          "Auth & Identity"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "IdentityController_refresh",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Làm mới Access Token qua cookie Refresh Token",
+        "tags": [
+          "Auth & Identity"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "IdentityController_logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Đăng xuất tài khoản",
+        "tags": [
+          "Auth & Identity"
+        ]
+      }
+    },
+    "/me": {
+      "get": {
+        "operationId": "IdentityController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Lấy thông tin cá nhân hiện tại",
+        "tags": [
+          "Auth & Identity"
+        ]
+      },
+      "patch": {
+        "operationId": "IdentityController_updateMe",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cập nhật thông tin cá nhân",
+        "tags": [
+          "Auth & Identity"
+        ]
+      }
+    },
+    "/me/avatar/presign": {
+      "post": {
+        "operationId": "IdentityController_presignAvatar",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvatarPresignDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarPresignResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Xin URL tải ảnh đại diện lên Storage",
+        "tags": [
+          "Auth & Identity"
+        ]
+      }
+    },
+    "/staff/units": {
+      "get": {
+        "operationId": "InventoryController_listStaffUnits",
+        "parameters": [
+          {
+            "name": "branch",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "AVAILABLE",
+                "MAINTENANCE",
+                "RETIRED"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Danh sách từng chiếc máy trong kho",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      }
+    },
+    "/staff/unit-blocks": {
+      "get": {
+        "operationId": "InventoryController_listUnitBlocks",
+        "parameters": [
+          {
+            "name": "unitId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Danh sách lịch khóa bảo trì",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      },
+      "post": {
+        "operationId": "InventoryController_createUnitBlock",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUnitBlockDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Tạo lịch khóa bảo trì cho một chiếc máy",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      }
+    },
+    "/staff/unit-blocks/{id}": {
+      "delete": {
+        "operationId": "InventoryController_deleteUnitBlock",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Xóa lịch khóa bảo trì",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      }
+    },
+    "/admin/units": {
+      "get": {
+        "operationId": "InventoryController_listAdminUnits",
+        "parameters": [
+          {
+            "name": "branch",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "AVAILABLE",
+                "MAINTENANCE",
+                "RETIRED"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Danh sách từng chiếc máy",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      },
+      "post": {
+        "operationId": "InventoryController_createAdminUnit",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUnitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Tạo chiếc máy mới",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      }
+    },
+    "/admin/units/{id}": {
+      "get": {
+        "operationId": "InventoryController_getAdminUnit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Chi tiết chiếc máy",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      },
+      "patch": {
+        "operationId": "InventoryController_updateAdminUnit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUnitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Cập nhật chiếc máy",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      },
+      "delete": {
+        "operationId": "InventoryController_deleteAdminUnit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Xóa hoặc ngừng sử dụng chiếc máy",
+        "tags": [
+          "Inventory (Staff & Admin)"
+        ]
+      }
+    },
+    "/branches": {
+      "get": {
+        "operationId": "CatalogController_getBranches",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Danh sách chi nhánh đang hoạt động",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/contact-settings": {
+      "get": {
+        "operationId": "CatalogController_getContactSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Cấu hình liên hệ công khai & danh sách chi nhánh",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/categories": {
+      "get": {
+        "operationId": "CatalogController_getCategories",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Cây danh mục thiết bị",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/brands": {
+      "get": {
+        "operationId": "CatalogController_getBrands",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Danh sách thương hiệu",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/film-products": {
+      "get": {
+        "operationId": "CatalogController_getFilmProducts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Danh sách film bán kèm",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "CatalogController_listModels",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated category slugs",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated brand slugs",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CAMERA",
+                "LENS",
+                "ACCESSORY"
+              ]
+            }
+          },
+          {
+            "name": "cameraType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DIGITAL",
+                "FILM",
+                "INSTANT"
+              ]
+            }
+          },
+          {
+            "name": "mount",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "minPrice",
+            "required": false,
+            "in": "query",
+            "description": "Giá thuê tối thiểu (VNĐ), tối đa 100.000.000",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "description": "Giá thuê tối đa (VNĐ), tối đa 100.000.000",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "branch",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-10",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-12",
+              "type": "string"
+            }
+          },
+          {
+            "name": "featured",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "excludeId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "default",
+                "price_asc",
+                "price_desc",
+                "newest"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Tìm kiếm và lọc mẫu máy cho thuê",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/models/{id}/availability": {
+      "get": {
+        "operationId": "CatalogController_getModelAvailability",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "branch",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "tay-ho",
+              "type": "string"
+            }
+          },
+          {
+            "name": "month",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-12",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Lịch ngày hết máy theo tháng và chi nhánh",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/models/{slug}": {
+      "get": {
+        "operationId": "CatalogController_getModelBySlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Chi tiết mẫu máy theo slug",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/favorites": {
+      "get": {
+        "operationId": "CatalogController_listFavorites",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Danh sách mẫu máy yêu thích",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/favorites/{modelId}": {
+      "post": {
+        "operationId": "CatalogController_addFavorite",
+        "parameters": [
+          {
+            "name": "modelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Thêm mẫu máy vào yêu thích",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      },
+      "delete": {
+        "operationId": "CatalogController_removeFavorite",
+        "parameters": [
+          {
+            "name": "modelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Xóa mẫu máy khỏi yêu thích",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/admin/models": {
+      "get": {
+        "operationId": "CatalogAdminController_listModels",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Danh sách mẫu máy",
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "post": {
+        "operationId": "CatalogAdminController_createModel",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Tạo mẫu máy mới",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/models/{id}": {
+      "get": {
+        "operationId": "CatalogAdminController_getModel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Chi tiết mẫu máy",
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "patch": {
+        "operationId": "CatalogAdminController_updateModel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateModelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Cập nhật mẫu máy",
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "delete": {
+        "operationId": "CatalogAdminController_deleteModel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Ẩn hoặc xóa mẫu máy",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/models/{id}/specs": {
+      "put": {
+        "operationId": "CatalogAdminController_updateSpecs",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateModelSpecsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Cập nhật thông số kỹ thuật mẫu máy",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/models/{id}/images/presign": {
+      "post": {
+        "operationId": "CatalogAdminController_presignImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImagePresignDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Xin URL tải ảnh mẫu máy lên Storage",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/models/{id}/images": {
+      "post": {
+        "operationId": "CatalogAdminController_addImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModelImageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Đăng ký ảnh mẫu máy đã tải lên",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/models/{id}/images/order": {
+      "patch": {
+        "operationId": "CatalogAdminController_reorderImages",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderImagesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Sắp xếp thứ tự ảnh mẫu máy",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/models/{id}/images/{imageId}": {
+      "delete": {
+        "operationId": "CatalogAdminController_deleteImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "imageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Xóa ảnh mẫu máy",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/categories": {
+      "get": {
+        "operationId": "CatalogAdminController_listCategories",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "post": {
+        "operationId": "CatalogAdminController_createCategory",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCategoryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/categories/{id}": {
+      "patch": {
+        "operationId": "CatalogAdminController_updateCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCategoryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "delete": {
+        "operationId": "CatalogAdminController_deleteCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/brands": {
+      "get": {
+        "operationId": "CatalogAdminController_listBrands",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "post": {
+        "operationId": "CatalogAdminController_createBrand",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBrandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/brands/{id}": {
+      "patch": {
+        "operationId": "CatalogAdminController_updateBrand",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBrandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "delete": {
+        "operationId": "CatalogAdminController_deleteBrand",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/branches": {
+      "get": {
+        "operationId": "CatalogAdminController_listBranches",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "post": {
+        "operationId": "CatalogAdminController_createBranch",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBranchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/branches/{id}": {
+      "patch": {
+        "operationId": "CatalogAdminController_updateBranch",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBranchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "delete": {
+        "operationId": "CatalogAdminController_deleteBranch",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/film-products": {
+      "get": {
+        "operationId": "CatalogAdminController_listFilmProducts",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "post": {
+        "operationId": "CatalogAdminController_createFilmProduct",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFilmProductDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/film-products/{id}": {
+      "patch": {
+        "operationId": "CatalogAdminController_updateFilmProduct",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFilmProductDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      },
+      "delete": {
+        "operationId": "CatalogAdminController_deleteFilmProduct",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/contact-settings": {
+      "put": {
+        "operationId": "CatalogAdminController_updateContactSettings",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContactSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Cập nhật cấu hình liên hệ",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/admin/payment-settings/qr/presign": {
+      "post": {
+        "operationId": "CatalogAdminController_presignPaymentQr",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentQrPresignDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Tạo liên kết tải ảnh QR thanh toán",
+        "tags": [
+          "Admin Catalog"
+        ]
+      }
+    },
+    "/bookings/quote": {
+      "post": {
+        "operationId": "BookingController_quote",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Báo giá và kiểm tra còn trống (không giữ chỗ)",
+        "tags": [
+          "Bookings"
+        ]
+      }
+    },
+    "/bookings": {
+      "post": {
+        "operationId": "BookingController_createBooking",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Tạo yêu cầu đặt thuê (PENDING)",
+        "tags": [
+          "Bookings"
+        ]
+      },
+      "get": {
+        "operationId": "BookingController_listMyBookings",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "CONFIRMED",
+                "PICKED_UP",
+                "RETURNED",
+                "COMPLETED",
+                "REJECTED",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Danh sách đơn thuê của tôi",
+        "tags": [
+          "Bookings"
+        ]
+      }
+    },
+    "/bookings/{id}": {
+      "get": {
+        "operationId": "BookingController_getBookingDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Chi tiết đơn thuê",
+        "tags": [
+          "Bookings"
+        ]
+      }
+    },
+    "/bookings/{id}/cancel": {
+      "post": {
+        "operationId": "BookingController_cancelMyBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Khách hàng hủy đơn thuê",
+        "tags": [
+          "Bookings"
+        ]
+      }
+    },
+    "/bookings/{id}/payment/proof/presign": {
+      "post": {
+        "operationId": "RenterPaymentController_presign",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentProofPresignDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Tạo liên kết tải ảnh minh chứng thanh toán",
+        "tags": [
+          "Manual Payments"
+        ]
+      }
+    },
+    "/bookings/{id}/payment/proof": {
+      "post": {
+        "operationId": "RenterPaymentController_submit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitPaymentProofDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Gửi ảnh minh chứng thanh toán",
+        "tags": [
+          "Manual Payments"
+        ]
+      }
+    },
+    "/bookings/{id}/payment/history": {
+      "get": {
+        "operationId": "RenterPaymentController_history",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Xem trạng thái và lịch sử thanh toán",
+        "tags": [
+          "Manual Payments"
+        ]
+      }
+    },
+    "/staff/payments": {
+      "get": {
+        "operationId": "StaffPaymentController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Danh sách thanh toán chuyển khoản cần xử lý",
+        "tags": [
+          "Manual Payments"
+        ]
+      }
+    },
+    "/staff/payments/{id}/confirm": {
+      "post": {
+        "operationId": "StaffPaymentController_confirm",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Xác nhận khoản thanh toán đã đối chiếu",
+        "tags": [
+          "Manual Payments"
+        ]
+      }
+    },
+    "/staff/payments/{id}/reject": {
+      "post": {
+        "operationId": "StaffPaymentController_reject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Từ chối minh chứng thanh toán",
+        "tags": [
+          "Manual Payments"
+        ]
+      }
+    },
+    "/staff/dashboard": {
+      "get": {
+        "operationId": "OperationsController_getDashboard",
+        "parameters": [
+          {
+            "name": "branch",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "tay-ho",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Tổng quan vận hành cửa hàng trong ngày",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/bookings": {
+      "get": {
+        "operationId": "OperationsController_listBookings",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "CONFIRMED",
+                "PICKED_UP",
+                "RETURNED",
+                "COMPLETED",
+                "REJECTED",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
+            "name": "branch",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-12",
+              "type": "string"
+            }
+          },
+          {
+            "name": "overdue",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Danh sách đơn thuê cho nhân viên",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/handover-photos/presign": {
+      "post": {
+        "operationId": "OperationsController_presignHandoverPhoto",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoverPhotoPresignDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Xin URL tải ảnh biên bản giao nhận lên Storage",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/bookings/{id}/confirm": {
+      "post": {
+        "operationId": "OperationsController_confirmBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Xác nhận đơn thuê (PENDING -> CONFIRMED)",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/bookings/{id}/reject": {
+      "post": {
+        "operationId": "OperationsController_rejectBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonBodyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Từ chối đơn thuê (PENDING -> REJECTED)",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/bookings/{id}/cancel": {
+      "post": {
+        "operationId": "OperationsController_cancelBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonBodyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Nhân viên hủy đơn thuê",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/bookings/{id}/pickup": {
+      "post": {
+        "operationId": "OperationsController_pickupBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickupBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Giao máy & thu tiền (CONFIRMED -> PICKED_UP)",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/bookings/{id}/return": {
+      "post": {
+        "operationId": "OperationsController_returnBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Nhận lại máy (PICKED_UP -> RETURNED)",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/staff/bookings/{id}/complete": {
+      "post": {
+        "operationId": "OperationsController_completeBooking",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Hoàn tất đơn & hoàn cọc (RETURNED -> COMPLETED)",
+        "tags": [
+          "Staff Operations"
+        ]
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "AdminController_listUsers",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "RENTER",
+                "STAFF",
+                "ADMIN"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Danh sách người dùng",
+        "tags": [
+          "Admin Users"
+        ]
+      }
+    },
+    "/admin/users/{id}": {
+      "patch": {
+        "operationId": "AdminController_updateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAdminUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin: Cập nhật vai trò hoặc trạng thái người dùng",
+        "tags": [
+          "Admin Users"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Borroll API",
+    "description": "Borroll Camera Rental Backend API",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "RegisterDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "example": "Nguyễn Văn A"
+          },
+          "email": {
+            "type": "string",
+            "example": "a@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "example": "0912345678"
+          },
+          "password": {
+            "type": "string",
+            "example": "matkhau123",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "fullName",
+          "email",
+          "phone",
+          "password"
+        ]
+      },
+      "AuthUserEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx..."
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Nguyễn Văn A"
+          },
+          "email": {
+            "type": "string",
+            "example": "a@example.com"
+          },
+          "roles": {
+            "example": [
+              "RENTER"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "email",
+          "roles"
+        ]
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1Ni..."
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthUserEntity"
+          }
+        },
+        "required": [
+          "accessToken",
+          "user"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "a@example.com"
+          },
+          "password": {
+            "type": "string",
+            "example": "matkhau123"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx..."
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Nguyễn Văn A"
+          },
+          "email": {
+            "type": "string",
+            "example": "a@example.com"
+          },
+          "phone": {
+            "type": "object",
+            "example": "0912345678",
+            "nullable": true
+          },
+          "avatarUrl": {
+            "type": "object",
+            "example": null,
+            "nullable": true
+          },
+          "roles": {
+            "example": [
+              "RENTER"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "email",
+          "phone",
+          "avatarUrl",
+          "roles"
+        ]
+      },
+      "UpdateProfileDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "example": "Nguyễn Văn B"
+          },
+          "phone": {
+            "type": "string",
+            "example": "0987654321"
+          },
+          "avatarPath": {
+            "type": "object",
+            "example": "avatars/clx123/abc.jpg",
+            "nullable": true,
+            "description": "Đường dẫn ảnh đại diện nhận từ /me/avatar/presign, hoặc null để xóa ảnh"
+          }
+        }
+      },
+      "AvatarPresignDto": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "example": "image/jpeg",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp"
+            ]
+          },
+          "fileSize": {
+            "type": "number",
+            "example": 512000,
+            "description": "Kích thước tệp tin tính bằng byte (tối đa 2MB)"
+          }
+        },
+        "required": [
+          "contentType"
+        ]
+      },
+      "AvatarPresignResponse": {
+        "type": "object",
+        "properties": {
+          "uploadUrl": {
+            "type": "string",
+            "example": "https://..."
+          },
+          "path": {
+            "type": "string",
+            "example": "avatars/u1/abc.jpg"
+          },
+          "token": {
+            "type": "string",
+            "example": "eyJhbGciOi..."
+          }
+        },
+        "required": [
+          "uploadUrl",
+          "path",
+          "token"
+        ]
+      },
+      "CreateUnitBlockDto": {
+        "type": "object",
+        "properties": {
+          "unitId": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "example": "2026-12-10"
+          },
+          "endDate": {
+            "type": "string",
+            "example": "2026-12-12"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Thay pin, vệ sinh"
+          }
+        },
+        "required": [
+          "unitId",
+          "startDate",
+          "endDate",
+          "reason"
+        ]
+      },
+      "CreateUnitDto": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "serialNumber": {
+            "type": "string",
+            "example": "OXA-0042"
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "EXCELLENT",
+              "GOOD",
+              "FAIR"
+            ],
+            "default": "EXCELLENT"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "AVAILABLE",
+              "MAINTENANCE",
+              "RETIRED"
+            ],
+            "default": "AVAILABLE"
+          },
+          "notes": {
+            "type": "object"
+          },
+          "purchasedAt": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "modelId",
+          "branchId",
+          "serialNumber"
+        ]
+      },
+      "UpdateUnitDto": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string"
+          },
+          "serialNumber": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "EXCELLENT",
+              "GOOD",
+              "FAIR"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "AVAILABLE",
+              "MAINTENANCE",
+              "RETIRED"
+            ]
+          },
+          "notes": {
+            "type": "object"
+          },
+          "purchasedAt": {
+            "type": "object"
+          }
+        }
+      },
+      "InspectionNoteItemDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "label",
+          "ok"
+        ]
+      },
+      "CreateModelDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "CAMERA",
+              "LENS",
+              "ACCESSORY"
+            ]
+          },
+          "categoryId": {
+            "type": "string"
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "cameraType": {
+            "type": "string",
+            "enum": [
+              "DIGITAL",
+              "FILM",
+              "INSTANT"
+            ],
+            "nullable": true
+          },
+          "mount": {
+            "type": "object",
+            "nullable": true
+          },
+          "filmFormat": {
+            "type": "object",
+            "nullable": true
+          },
+          "pricePerDay": {
+            "type": "number"
+          },
+          "pricePerWeek": {
+            "type": "object",
+            "nullable": true
+          },
+          "deposit": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          },
+          "isFeatured": {
+            "type": "boolean",
+            "default": false
+          },
+          "lastInspectedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "inspectionNotes": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InspectionNoteItemDto"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "categoryId",
+          "brandId",
+          "name",
+          "slug",
+          "description",
+          "pricePerDay",
+          "deposit"
+        ]
+      },
+      "UpdateModelDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "CAMERA",
+              "LENS",
+              "ACCESSORY"
+            ]
+          },
+          "categoryId": {
+            "type": "string"
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "cameraType": {
+            "type": "string",
+            "enum": [
+              "DIGITAL",
+              "FILM",
+              "INSTANT"
+            ],
+            "nullable": true
+          },
+          "mount": {
+            "type": "object",
+            "nullable": true
+          },
+          "filmFormat": {
+            "type": "object",
+            "nullable": true
+          },
+          "pricePerDay": {
+            "type": "number"
+          },
+          "pricePerWeek": {
+            "type": "object",
+            "nullable": true
+          },
+          "deposit": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "isFeatured": {
+            "type": "boolean"
+          },
+          "lastInspectedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "inspectionNotes": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InspectionNoteItemDto"
+            }
+          }
+        }
+      },
+      "UpdateModelSpecsDto": {
+        "type": "object",
+        "properties": {
+          "exposure": {
+            "type": "object"
+          },
+          "controls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "power": {
+            "type": "string"
+          },
+          "quirks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "beginnerNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ImagePresignDto": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp"
+            ]
+          },
+          "fileSize": {
+            "type": "number",
+            "example": 1024000,
+            "description": "Kích thước tệp tin tính bằng byte (tối đa 8MB)"
+          }
+        },
+        "required": [
+          "contentType"
+        ]
+      },
+      "CreateModelImageDto": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PRODUCT",
+              "SAMPLE"
+            ],
+            "default": "PRODUCT"
+          },
+          "caption": {
+            "type": "object",
+            "nullable": true
+          },
+          "sampleLens": {
+            "type": "object",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "ReorderImagesDto": {
+        "type": "object",
+        "properties": {
+          "imageIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "imageIds"
+        ]
+      },
+      "CreateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "object",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ]
+      },
+      "UpdateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "object",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateBrandDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ]
+      },
+      "UpdateBrandDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateBranchDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "openHours": {
+            "type": "string"
+          },
+          "mapUrl": {
+            "type": "object",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "name",
+          "slug",
+          "address",
+          "phone",
+          "openHours"
+        ]
+      },
+      "UpdateBranchDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "openHours": {
+            "type": "string"
+          },
+          "mapUrl": {
+            "type": "object",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateFilmProductDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "iso": {
+            "type": "number"
+          },
+          "format": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "inStock": {
+            "type": "boolean",
+            "default": true
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "name",
+          "iso",
+          "format",
+          "price"
+        ]
+      },
+      "UpdateFilmProductDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "iso": {
+            "type": "number"
+          },
+          "format": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdateContactSettingsDto": {
+        "type": "object",
+        "properties": {
+          "paymentBankName": {
+            "type": "object",
+            "nullable": true
+          },
+          "paymentAccountNumber": {
+            "type": "object",
+            "nullable": true
+          },
+          "paymentAccountName": {
+            "type": "object",
+            "nullable": true
+          },
+          "paymentQrPath": {
+            "type": "object",
+            "nullable": true
+          },
+          "paymentInstructions": {
+            "type": "object",
+            "nullable": true
+          },
+          "paymentEnabled": {
+            "type": "boolean"
+          },
+          "zaloOaId": {
+            "type": "object",
+            "nullable": true,
+            "example": "1234567890123456789"
+          },
+          "zalo_oa_id": {
+            "type": "object",
+            "nullable": true
+          },
+          "zaloPhone": {
+            "type": "object",
+            "nullable": true,
+            "example": "0912345678"
+          },
+          "zalo_phone": {
+            "type": "object",
+            "nullable": true
+          },
+          "messengerPage": {
+            "type": "object",
+            "nullable": true,
+            "example": "borroll.camera"
+          },
+          "messenger_page": {
+            "type": "object",
+            "nullable": true
+          },
+          "instagramHandle": {
+            "type": "object",
+            "nullable": true,
+            "example": "borroll.camera"
+          },
+          "instagram_handle": {
+            "type": "object",
+            "nullable": true
+          },
+          "hotline": {
+            "type": "object",
+            "nullable": true,
+            "example": "0912345678"
+          },
+          "welcomeMessage": {
+            "type": "object",
+            "nullable": true,
+            "example": "Xin chào! BORROLL có thể hỗ trợ gì cho bạn?"
+          },
+          "welcome_message": {
+            "type": "object",
+            "nullable": true
+          },
+          "isChatEnabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "is_chat_enabled": {
+            "type": "boolean"
+          },
+          "chatEnabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PaymentQrPresignDto": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "fileSize": {
+            "type": "number",
+            "maximum": 5242880
+          }
+        },
+        "required": [
+          "contentType",
+          "fileSize"
+        ]
+      },
+      "BookingItemInputDto": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string",
+            "example": "clx..."
+          }
+        },
+        "required": [
+          "modelId"
+        ]
+      },
+      "BookingAddonInputDto": {
+        "type": "object",
+        "properties": {
+          "filmProductId": {
+            "type": "string",
+            "example": "f1"
+          },
+          "quantity": {
+            "type": "number",
+            "example": 2
+          }
+        },
+        "required": [
+          "filmProductId",
+          "quantity"
+        ]
+      },
+      "QuoteBookingDto": {
+        "type": "object",
+        "properties": {
+          "branchSlug": {
+            "type": "string",
+            "example": "tay-ho"
+          },
+          "startDate": {
+            "type": "string",
+            "example": "2026-12-12"
+          },
+          "endDate": {
+            "type": "string",
+            "example": "2026-12-15"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingItemInputDto"
+            }
+          },
+          "addons": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingAddonInputDto"
+            }
+          }
+        },
+        "required": [
+          "branchSlug",
+          "startDate",
+          "endDate",
+          "items"
+        ]
+      },
+      "CreateBookingDto": {
+        "type": "object",
+        "properties": {
+          "branchSlug": {
+            "type": "string",
+            "example": "tay-ho"
+          },
+          "startDate": {
+            "type": "string",
+            "example": "2026-12-12"
+          },
+          "endDate": {
+            "type": "string",
+            "example": "2026-12-15"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingItemInputDto"
+            }
+          },
+          "addons": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingAddonInputDto"
+            }
+          },
+          "contactName": {
+            "type": "string",
+            "example": "Nguyễn Văn A"
+          },
+          "contactPhone": {
+            "type": "string",
+            "example": "0912345678"
+          },
+          "note": {
+            "type": "object",
+            "nullable": true
+          },
+          "setupPlanId": {
+            "type": "object",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "Khóa chống gửi trùng lặp (Idempotency Key)",
+            "example": "d9b1c23a-5f4b-4a7c-95b8-d21b76174a6b"
+          }
+        },
+        "required": [
+          "branchSlug",
+          "startDate",
+          "endDate",
+          "items",
+          "contactName",
+          "contactPhone"
+        ]
+      },
+      "CancelBookingDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "PaymentProofPresignDto": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png"
+            ]
+          }
+        },
+        "required": [
+          "contentType"
+        ]
+      },
+      "SubmitPaymentProofDto": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "RejectPaymentDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "HandoverPhotoPresignDto": {
+        "type": "object",
+        "properties": {
+          "bookingId": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp"
+            ]
+          },
+          "fileSize": {
+            "type": "number",
+            "example": 1024000,
+            "description": "Kích thước tệp tin tính bằng byte (tối đa 8MB)"
+          }
+        },
+        "required": [
+          "bookingId",
+          "contentType"
+        ]
+      },
+      "ReasonBodyDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "Hết máy dự phòng"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "HandoverChecklistItemDto": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "example": "Thân máy"
+          },
+          "ok": {
+            "type": "boolean",
+            "example": true
+          },
+          "note": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "item",
+          "ok"
+        ]
+      },
+      "PickupPaymentItemDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "DEPOSIT_RECEIVED",
+              "RENTAL_RECEIVED"
+            ]
+          },
+          "amount": {
+            "type": "number",
+            "example": 3000000
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ]
+          },
+          "note": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "type",
+          "amount",
+          "method"
+        ]
+      },
+      "PickupBookingDto": {
+        "type": "object",
+        "properties": {
+          "checklist": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoverChecklistItemDto"
+            }
+          },
+          "conditionNotes": {
+            "type": "object",
+            "nullable": true
+          },
+          "photoPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "idChecked": {
+            "type": "boolean",
+            "example": true
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PickupPaymentItemDto"
+            }
+          }
+        },
+        "required": [
+          "checklist",
+          "photoPaths",
+          "idChecked",
+          "payments"
+        ]
+      },
+      "ReturnBookingDto": {
+        "type": "object",
+        "properties": {
+          "checklist": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoverChecklistItemDto"
+            }
+          },
+          "conditionNotes": {
+            "type": "object",
+            "nullable": true
+          },
+          "photoPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "checklist",
+          "photoPaths"
+        ]
+      },
+      "CompleteChargeItemDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "DAMAGE_CHARGE",
+              "LATE_FEE"
+            ]
+          },
+          "amount": {
+            "type": "number",
+            "example": 200000
+          },
+          "note": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "type",
+          "amount"
+        ]
+      },
+      "CompleteBookingDto": {
+        "type": "object",
+        "properties": {
+          "charges": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompleteChargeItemDto"
+            }
+          },
+          "refundMethod": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ]
+          },
+          "note": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "refundMethod"
+        ]
+      },
+      "UpdateAdminUserDto": {
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "RENTER",
+                "STAFF",
+                "ADMIN"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

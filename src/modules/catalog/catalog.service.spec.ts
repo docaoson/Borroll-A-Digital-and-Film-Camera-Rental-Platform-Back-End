@@ -120,10 +120,27 @@ describe('CatalogService - Contact Settings & Active Public Filters', () => {
     const branchService = new BranchService(prismaService);
     const categoryService = new CategoryService(prismaService);
     const brandService = new BrandService(prismaService);
-    const filmProductService = new FilmProductService(prismaService, configService, storageService);
-    const contactSettingsService = new ContactSettingsService(prismaService);
-    const favoriteService = new FavoriteService(prismaService, configService, storageService);
-    const modelService = new ModelService(prismaService, configService, inventoryService, storageService);
+    const filmProductService = new FilmProductService(
+      prismaService,
+      configService,
+      storageService,
+    );
+    const contactSettingsService = new ContactSettingsService(
+      prismaService,
+      configService,
+      storageService,
+    );
+    const favoriteService = new FavoriteService(
+      prismaService,
+      configService,
+      storageService,
+    );
+    const modelService = new ModelService(
+      prismaService,
+      configService,
+      inventoryService,
+      storageService,
+    );
 
     service = new CatalogService(
       branchService,
@@ -145,6 +162,15 @@ describe('CatalogService - Contact Settings & Active Public Filters', () => {
       messenger: { url: null },
       instagram: { handle: null, url: null },
       hotline: null,
+      payment: {
+        enabled: false,
+        bankName: null,
+        accountNumber: null,
+        accountName: null,
+        qrImageUrl: null,
+        qrPath: null,
+        instructions: null,
+      },
       branches: [
         { slug: 'tay-ho', name: 'Chi nhánh Tây Hồ', phone: '0866747114' },
       ],

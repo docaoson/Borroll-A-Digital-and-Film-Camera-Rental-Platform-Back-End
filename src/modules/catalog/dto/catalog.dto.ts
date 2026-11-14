@@ -43,25 +43,43 @@ export class ListModelsQueryDto {
   @IsEnum(CameraType)
   cameraType?: CameraType;
 
+  @ApiPropertyOptional({ description: 'Định dạng phim, ví dụ 35mm hoặc 120' })
+  @IsOptional()
+  @IsString()
+  filmFormat?: string;
+
+  @ApiPropertyOptional({ description: 'Cỡ cảm biến số, ví dụ Full Frame hoặc APS-C' })
+  @IsOptional()
+  @IsString()
+  sensorSize?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   mount?: string;
 
-  @ApiPropertyOptional({ description: 'Giá thuê tối thiểu (VNĐ), tối đa 100.000.000' })
+  @ApiPropertyOptional({
+    description: 'Giá thuê tối thiểu (VNĐ), tối đa 100.000.000',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(100_000_000, { message: 'Giá lọc tối thiểu không được vượt quá 100.000.000₫' })
+  @Max(100_000_000, {
+    message: 'Giá lọc tối thiểu không được vượt quá 100.000.000₫',
+  })
   minPrice?: number;
 
-  @ApiPropertyOptional({ description: 'Giá thuê tối đa (VNĐ), tối đa 100.000.000' })
+  @ApiPropertyOptional({
+    description: 'Giá thuê tối đa (VNĐ), tối đa 100.000.000',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(100_000_000, { message: 'Giá lọc tối đa không được vượt quá 100.000.000₫' })
+  @Max(100_000_000, {
+    message: 'Giá lọc tối đa không được vượt quá 100.000.000₫',
+  })
   maxPrice?: number;
 
   @ApiPropertyOptional()
@@ -387,6 +405,19 @@ export class ImagePresignDto {
   fileSize?: number;
 }
 
+export class PaymentQrPresignDto {
+  @ApiProperty({ enum: ['image/jpeg', 'image/png'] })
+  @IsIn(['image/jpeg', 'image/png'])
+  contentType!: 'image/jpeg' | 'image/png';
+
+  @ApiProperty({ maximum: 5 * 1024 * 1024 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5 * 1024 * 1024)
+  fileSize!: number;
+}
+
 export class CreateModelImageDto {
   @ApiProperty()
   @IsString()
@@ -669,6 +700,36 @@ export class UpdateFilmProductDto {
 }
 
 export class UpdateContactSettingsDto {
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  paymentBankName?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  paymentAccountNumber?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  paymentAccountName?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  paymentQrPath?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  paymentInstructions?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  paymentEnabled?: boolean;
+
   @ApiPropertyOptional({ nullable: true, example: '1234567890123456789' })
   @IsOptional()
   @IsString()

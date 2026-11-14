@@ -90,6 +90,19 @@ enum PaymentMethod {
   BANK_TRANSFER
 }
 
+enum ManualPaymentStatus {
+  UNPAID
+  PENDING_VERIFICATION
+  REJECTED
+  PAID
+}
+
+enum PaymentProofStatus {
+  PENDING
+  REJECTED
+  APPROVED
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -338,15 +351,15 @@ model RentalUnit {
 }
 
 model UnitBlock {
-  id        String                      @id @default(cuid())
-  unitId    String                      @map("unit_id")
-  startDate DateTime                    @map("start_date") @db.Date
-  endDate   DateTime                    @map("end_date") @db.Date
+  id        String                    @id @default(cuid())
+  unitId    String                    @map("unit_id")
+  startDate DateTime                  @map("start_date") @db.Date
+  endDate   DateTime                  @map("end_date") @db.Date
   reason    String
-  createdBy String                      @map("created_by")
+  createdBy String                    @map("created_by")
   during    Unsupported("daterange")?
-  createdAt DateTime                    @default(now()) @map("created_at")
-  updatedAt DateTime                    @updatedAt @map("updated_at")
+  createdAt DateTime                  @default(now()) @map("created_at")
+  updatedAt DateTime                  @updatedAt @map("updated_at")
 
   unit RentalUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
@@ -382,13 +395,14 @@ model Booking {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  user       User               @relation(fields: [userId], references: [id])
-  branch     Branch             @relation(fields: [branchId], references: [id])
-  units      BookingUnit[]
-  addons     BookingAddon[]
-  statusLogs BookingStatusLog[]
-  handovers  HandoverRecord[]
-  payments   PaymentRecord[]
+  user          User               @relation(fields: [userId], references: [id])
+  branch        Branch             @relation(fields: [branchId], references: [id])
+  units         BookingUnit[]
+  addons        BookingAddon[]
+  statusLogs    BookingStatusLog[]
+  handovers     HandoverRecord[]
+  payments      PaymentRecord[]
+  manualPayment ManualPayment?
 
   @@index([userId, status])
   @@index([branchId, status, startDate])
@@ -486,16 +500,54 @@ model PaymentRecord {
 }
 
 model ContactSetting {
-  id              String   @id @default("default")
-  zaloOaId        String?  @map("zalo_oa_id")
-  zaloPhone       String?  @map("zalo_phone")
-  messengerPage   String?  @map("messenger_page")
-  instagramHandle String?  @map("instagram_handle")
-  hotline         String?
-  welcomeMessage  String?  @map("welcome_message")
-  isChatEnabled   Boolean  @default(false) @map("is_chat_enabled")
-  updatedBy       String?  @map("updated_by")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default("default")
+  zaloOaId             String?  @map("zalo_oa_id")
+  zaloPhone            String?  @map("zalo_phone")
+  messengerPage        String?  @map("messenger_page")
+  instagramHandle      String?  @map("instagram_handle")
+  hotline              String?
+  welcomeMessage       String?  @map("welcome_message")
+  isChatEnabled        Boolean  @default(false) @map("is_chat_enabled")
+  paymentBankName      String?  @map("payment_bank_name")
+  paymentAccountNumber String?  @map("payment_account_number")
+  paymentAccountName   String?  @map("payment_account_name")
+  paymentQrPath        String?  @map("payment_qr_path")
+  paymentInstructions  String?  @map("payment_instructions")
+  paymentEnabled       Boolean  @default(false) @map("payment_enabled")
+  updatedBy            String?  @map("updated_by")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@map("contact_settings")
+}
+
+model ManualPayment {
+  id          String              @id @default(cuid())
+  bookingId   String              @unique @map("booking_id")
+  amount      Int
+  status      ManualPaymentStatus @default(UNPAID)
+  confirmedBy String?             @map("confirmed_by")
+  confirmedAt DateTime?           @map("confirmed_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  booking Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  proofs  PaymentProof[]
+
+  @@index([status, createdAt])
+  @@map("manual_payments")
+}
+
+model PaymentProof {
+  id              String             @id @default(cuid())
+  paymentId       String             @map("payment_id")
+  path            String             @map("path")
+  status          PaymentProofStatus @default(PENDING)
+  submittedAt     DateTime           @default(now()) @map("submitted_at")
+  reviewedBy      String?            @map("reviewed_by")
+  reviewedAt      DateTime?          @map("reviewed_at")
+  rejectionReason String?            @map("rejection_reason")
+  payment         ManualPayment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, submittedAt])
+  @@map("payment_proofs")
 }

@@ -144,6 +144,10 @@ async function main() {
       parentId: rootFilm.id,
       sortOrder: 3,
     },
+    { slug: 'film-pns', name: 'PNS / Point & Shoot', parentId: rootFilm.id, sortOrder: 4 },
+    { slug: 'film-tlr', name: 'TLR', parentId: rootFilm.id, sortOrder: 5 },
+    { slug: 'film-medium-format', name: 'Medium Format 120', parentId: rootFilm.id, sortOrder: 6 },
+    { slug: 'film-large-format', name: 'Large Format', parentId: rootFilm.id, sortOrder: 7 },
     {
       slug: 'digital-mirrorless',
       name: 'Mirrorless',
@@ -156,6 +160,10 @@ async function main() {
       parentId: rootDigital.id,
       sortOrder: 2,
     },
+    { slug: 'digital-dslr', name: 'DSLR', parentId: rootDigital.id, sortOrder: 3 },
+    { slug: 'digital-bridge', name: 'Bridge', parentId: rootDigital.id, sortOrder: 4 },
+    { slug: 'digital-medium-format', name: 'Medium Format Digital', parentId: rootDigital.id, sortOrder: 5 },
+    { slug: 'digital-action', name: 'Action Camera', parentId: rootDigital.id, sortOrder: 6 },
   ];
 
   const catBySlug = new Map<string, string>([

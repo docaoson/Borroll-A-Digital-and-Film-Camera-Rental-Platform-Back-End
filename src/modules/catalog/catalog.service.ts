@@ -89,8 +89,15 @@ export class CatalogService {
   getPublicContactSettings(): Promise<PublicContactSettingsResponse> {
     return this.contactSettingsService.getPublicContactSettings();
   }
+  getPublicPaymentSettings() {
+    return this.contactSettingsService.getPublicPaymentSettings();
+  }
   updateContactSettings(dto: UpdateContactSettingsDto, actorId: string) {
     return this.contactSettingsService.updateContactSettings(dto, actorId);
+  }
+
+  presignPaymentQr(contentType: string, fileSize: number) {
+    return this.contactSettingsService.presignPaymentQr(contentType, fileSize);
   }
 
   // 3. Category
