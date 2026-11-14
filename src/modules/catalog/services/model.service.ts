@@ -108,29 +108,21 @@ export class ModelService {
   ) {}
 
   private async assertCameraCategoryMatchesType(
-    kind: string,
-    cameraType: CameraType | null | undefined,
+    cameraType: CameraType,
     categoryId: string,
   ): Promise<void> {
-    if (kind !== 'CAMERA') return;
-    const expectedParentSlug: Record<CameraType, string> = {
-      FILM: 'may-film',
-      DIGITAL: 'may-digital',
-      INSTANT: 'may-instant',
-    };
-    if (!cameraType) {
-      throw new BadRequestException('Vui lòng chọn nhóm máy ảnh.');
-    }
     const category = await this.prisma.category.findUnique({
       where: { id: categoryId },
       select: { slug: true, parent: { select: { slug: true } } },
     });
-    const matches = cameraType === CameraType.INSTANT
-      ? category?.slug === expectedParentSlug[cameraType] || category?.parent?.slug === expectedParentSlug[cameraType]
-      : category?.parent?.slug === expectedParentSlug[cameraType];
-    if (!matches) {
+    const groupSlug = category?.parent?.slug ?? category?.slug;
+    const expectedGroup: Partial<Record<CameraType, string>> = {
+      [CameraType.FILM]: 'may-film',
+      [CameraType.DIGITAL]: 'may-digital',
+    };
+    if (!category || expectedGroup[cameraType] !== groupSlug) {
       throw new BadRequestException(
-        'Loại thiết bị phải thuộc đúng nhóm Film, Digital hoặc Instant đã chọn.',
+        'Danh mục dòng máy không thuộc loại máy ảnh Film hoặc Digital đã chọn.',
       );
     }
   }
@@ -863,11 +855,20 @@ export class ModelService {
 
   async createAdminModel(dto: CreateModelDto, actorId: string) {
     try {
-      await this.assertCameraCategoryMatchesType(
-        dto.kind,
-        dto.cameraType,
-        dto.categoryId,
-      );
+      if (dto.kind === 'CAMERA') {
+        if (
+          dto.cameraType !== CameraType.FILM &&
+          dto.cameraType !== CameraType.DIGITAL
+        ) {
+          throw new BadRequestException(
+            'Vui lòng chọn loại máy ảnh Film hoặc Digital.',
+          );
+        }
+        await this.assertCameraCategoryMatchesType(
+          dto.cameraType,
+          dto.categoryId,
+        );
+      }
       const created = await this.prisma.$transaction(async (tx) => {
         const model = await tx.rentalModel.create({
           data: {
@@ -877,7 +878,7 @@ export class ModelService {
             name: dto.name.trim(),
             slug: dto.slug.trim().toLowerCase(),
             description: dto.description.trim(),
-            cameraType: dto.cameraType ?? null,
+            cameraType: dto.kind === 'CAMERA' ? dto.cameraType : null,
             mount: dto.mount ?? null,
             filmFormat: dto.filmFormat ?? null,
             pricePerDay: dto.pricePerDay,
@@ -956,11 +957,34 @@ export class ModelService {
       });
     }
 
-    await this.assertCameraCategoryMatchesType(
-      dto.kind ?? existing.kind,
-      dto.cameraType ?? existing.cameraType,
-      dto.categoryId ?? existing.categoryId,
-    );
+    const finalKind = dto.kind ?? existing.kind;
+    const finalCategoryId = dto.categoryId ?? existing.categoryId;
+    const finalCameraType = dto.cameraType === undefined
+      ? existing.cameraType
+      : dto.cameraType;
+    if (finalKind === 'CAMERA') {
+      const isUnchangedLegacyInstant =
+        dto.cameraType === undefined &&
+        existing.cameraType === CameraType.INSTANT &&
+        finalCategoryId === existing.categoryId;
+      if (isUnchangedLegacyInstant) {
+        // Keep existing INSTANT records intact; the Admin form asks for explicit
+        // Film/Digital classification before changing their camera data.
+      } else {
+        if (
+          finalCameraType !== CameraType.FILM &&
+          finalCameraType !== CameraType.DIGITAL
+        ) {
+          throw new BadRequestException(
+            'Vui lòng chọn loại máy ảnh Film hoặc Digital.',
+          );
+        }
+        await this.assertCameraCategoryMatchesType(
+          finalCameraType,
+          finalCategoryId,
+        );
+      }
+    }
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -973,7 +997,7 @@ export class ModelService {
             name: dto.name?.trim(),
             slug: dto.slug?.trim().toLowerCase(),
             description: dto.description?.trim(),
-            cameraType: dto.cameraType,
+            cameraType: finalKind === 'CAMERA' ? finalCameraType : dto.cameraType,
             mount: dto.mount,
             filmFormat: dto.filmFormat,
             pricePerDay: dto.pricePerDay,

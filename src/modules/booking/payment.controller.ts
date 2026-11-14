@@ -66,7 +66,7 @@ export class RenterPaymentController {
 
 @ApiTags('Manual Payments')
 @ApiBearerAuth()
-@Roles('STAFF', 'ADMIN')
+@Roles('ADMIN')
 @Controller('staff/payments')
 export class StaffPaymentController {
   constructor(private readonly payments: PaymentService) {}

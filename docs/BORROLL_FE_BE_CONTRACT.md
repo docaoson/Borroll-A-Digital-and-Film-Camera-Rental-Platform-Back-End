@@ -16,7 +16,7 @@ Bản này thay thế hoàn toàn bản nền tảng cũ: **không còn chủ m�
 - **Refresh token** nằm trong cookie `httpOnly`, FE không đọc được. Mọi request phải gửi `credentials: 'include'`.
 - Khi API trả `401` với `error.code = "TOKEN_EXPIRED"`: gọi `POST /auth/refresh` **một lần** rồi gửi lại request cũ (dùng một promise chung để nhiều request không refresh cùng lúc). Refresh cũng `401` thì chuyển về `/login?next=<trang hiện tại>`.
 - Endpoint đánh dấu 🌐 là công khai. Riêng 🌐* **nhận token tùy chọn**: có token thì trả thêm dữ liệu cá nhân (ví dụ `isFavorite`), không có thì coi như khách vãng lai.
-- Vai trò: `RENTER` (hiển thị là **Khách**), `STAFF` (nhân viên), `ADMIN`. Mã vai trò `RENTER` giữ nguyên từ bản cũ. `HOST` không còn dùng.
+- Vai trò đang được cấp: `RENTER` (hiển thị là **Khách**) và `ADMIN`. `STAFF` không còn được cấp quyền; giá trị enum và dữ liệu cũ cần migration riêng để xóa hoàn toàn. `HOST` không còn dùng.
 - **Quyền nằm trong access token.** Khi admin đổi vai trò của ai đó, người đó phải đăng nhập lại hoặc chờ token hết hạn (tối đa 15 phút) mới có quyền mới.
 
 ### 1.2 Định dạng dữ liệu
@@ -86,7 +86,7 @@ Lỗi form (`400 VALIDATION_ERROR`): `details = { "fields": { "phone": "Số đi
 
 ### 1.6 Quy tắc "nút hiển thị theo vai trò"
 
-Chi tiết đơn có `viewerRole` (`CUSTOMER|STAFF|ADMIN`) và `allowedActions`. **FE chỉ hiển thị nút theo `allowedActions`**, không tự suy luận. Các giá trị: `cancel`, `confirm`, `reject`, `pickup`, `return`, `complete`. BE vẫn kiểm tra quyền ở mỗi endpoint.
+Chi tiết đơn có `viewerRole` (`CUSTOMER|ADMIN`) và `allowedActions`. **FE chỉ hiển thị nút theo `allowedActions`**, không tự suy luận. Các giá trị: `cancel`, `confirm`, `reject`, `pickup`, `return`, `complete`. BE vẫn kiểm tra quyền ở mỗi endpoint.
 
 ---
 
@@ -119,14 +119,14 @@ Chi tiết đơn có `viewerRole` (`CUSTOMER|STAFF|ADMIN`) và `allowedActions`.
 | Hồ sơ cá nhân | `/settings` | `GET/PATCH /me`, `POST /me/avatar/presign` | P1 |
 | Yêu thích | `/favorites` | `GET /favorites`, `DELETE /favorites/:modelId` | P3 |
 
-### 2.3 Nhân viên và admin (`/admin/*`; STAFF và ADMIN vào được, trang quản lý kho và người dùng chỉ ADMIN)
+### 2.3 Quản trị viên (`/admin/*`; chỉ ADMIN được truy cập)
 
 | Trang | Route | API | Quyền | Ưu tiên |
 |---|---|---|---|---|
-| Tổng quan | `/admin` | `GET /staff/dashboard` | STAFF, ADMIN | P2 |
-| Danh sách đơn | `/admin/bookings` | `GET /staff/bookings` | STAFF, ADMIN | P2 |
-| Chi tiết đơn (xác nhận, giao, nhận, hoàn tất) | `/admin/bookings/[id]` | `GET /bookings/:id`, `POST /staff/bookings/:id/{confirm,reject,pickup,return,complete,cancel}`, `POST /staff/handover-photos/presign` | STAFF, ADMIN | P2 |
-| Lịch kho | `/admin/calendar` | `GET /staff/units`, `GET/POST/DELETE /staff/unit-blocks` | STAFF, ADMIN | P2 |
+| Tổng quan | `/admin` | `GET /staff/dashboard` | ADMIN | P2 |
+| Danh sách đơn | `/admin/bookings` | `GET /staff/bookings` | ADMIN | P2 |
+| Chi tiết đơn (xác nhận, giao, nhận, hoàn tất) | `/admin/bookings/[id]` | `GET /bookings/:id`, `POST /staff/bookings/:id/{confirm,reject,pickup,return,complete,cancel}`, `POST /staff/handover-photos/presign` | ADMIN | P2 |
+| Lịch kho | `/admin/calendar` | `GET /staff/units`, `GET/POST/DELETE /staff/unit-blocks` | ADMIN | P2 |
 | Mẫu máy | `/admin/models`, `/admin/models/[id]` | `/admin/models` CRUD, `PUT /admin/models/:id/specs`, ảnh | ADMIN | P2 |
 | Từng chiếc máy | `/admin/units` | `/admin/units` CRUD | ADMIN | P2 |
 | Danh mục, hãng, chi nhánh, film | `/admin/catalog` | `/admin/categories`, `/admin/brands`, `/admin/branches`, `/admin/film-products` | ADMIN | P2 |
@@ -143,7 +143,7 @@ Chi tiết đơn có `viewerRole` (`CUSTOMER|STAFF|ADMIN`) và `allowedActions`.
 
 ## 3. HỢP ĐỒNG API
 
-> 🌐 công khai · 🌐* công khai, token tùy chọn · 🔑 cần đăng nhập · 🧑‍💼 STAFF hoặc ADMIN · 🛡 chỉ ADMIN.
+> 🌐 công khai · 🌐* công khai, token tùy chọn · 🔑 cần đăng nhập · 🛡 chỉ ADMIN.
 > Ví dụ chỉ nêu các trường chính. BE chỉ **thêm** trường, không đổi tên hay xóa trường đã thỏa thuận mà không báo trước.
 
 ### 3.1 Xác thực và tài khoản
@@ -321,7 +321,7 @@ Một ngày là "hết" khi **không còn chiếc nào trống** ở chi nhánh 
 - `setupPlan`: kế hoạch cấu hình AI đính kèm đơn (xem 3.6), hoặc `null`.
 
 **🔑 `GET /bookings?status=&page=`** — đơn của tôi (mỗi phần tử là đối tượng đơn rút gọn: bỏ `payments`, `handovers`, `setupPlan`).
-**🔑 `GET /bookings/:id`** — khách chỉ xem đơn của mình; STAFF và ADMIN xem được mọi đơn; trường hợp khác `404`.
+**🔑 `GET /bookings/:id`** — khách chỉ xem đơn của mình; ADMIN xem được mọi đơn; trường hợp khác `404`.
 **🔑 `POST /bookings/:id/cancel`** — body `{ "reason": "..." }` (tùy chọn). Khách chỉ hủy được khi `PENDING` hoặc `CONFIRMED`. Trả đơn mới. Lỗi: `409 INVALID_STATUS_TRANSITION`.
 
 ### 3.5 Yêu thích
@@ -423,7 +423,7 @@ CRUD theo kiểu REST (`POST` tạo, `PATCH /:id` sửa, `GET` danh sách/chi ti
 | Chi nhánh | `/admin/branches` | `name`, `slug`, `address`, `phone`, `openHours`, `mapUrl`, `isActive` |
 | Film bán kèm | `/admin/film-products` | `name`, `iso`, `format`, `price`, `inStock` |
 | Cấu hình liên hệ | `PUT /admin/contact-settings` | `zaloOaId` (chữ số, tối đa 30), `zaloPhone` (`/^0\d{9}$/`), `messengerPage` (`/^[A-Za-z0-9.]{5,50}$/`), `hotline` (`/^0\d{9}$/`), `welcomeMessage` (tối đa 120 ký tự), `isChatEnabled` (`boolean`); không nhận URL hoặc HTML/script (`400`) |
-| Người dùng | `GET /admin/users?q=&role=&page=`, `PATCH /admin/users/:id` | body `{ "roles": ["RENTER","STAFF"], "status": "ACTIVE" }` |
+| Người dùng | `GET /admin/users?q=&role=&page=`, `PATCH /admin/users/:id` | body `{ "roles": ["RENTER","ADMIN"], "status": "ACTIVE" }` |
 
 - Không xóa cứng mẫu máy hay chiếc máy đã từng có đơn; chỉ ẩn (`isActive = false`) hoặc `RETIRED`.
 - Admin không tự bỏ quyền `ADMIN` của chính mình được (`400`).

@@ -314,7 +314,7 @@
         ],
         "summary": "Danh sách từng chiếc máy trong kho",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       }
     },
@@ -361,7 +361,7 @@
         ],
         "summary": "Danh sách lịch khóa bảo trì",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       },
       "post": {
@@ -389,7 +389,7 @@
         ],
         "summary": "Tạo lịch khóa bảo trì cho một chiếc máy",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       }
     },
@@ -418,7 +418,7 @@
         ],
         "summary": "Xóa lịch khóa bảo trì",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       }
     },
@@ -494,7 +494,7 @@
         ],
         "summary": "Admin: Danh sách từng chiếc máy",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       },
       "post": {
@@ -522,7 +522,7 @@
         ],
         "summary": "Admin: Tạo chiếc máy mới",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       }
     },
@@ -551,7 +551,7 @@
         ],
         "summary": "Admin: Chi tiết chiếc máy",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       },
       "patch": {
@@ -588,7 +588,7 @@
         ],
         "summary": "Admin: Cập nhật chiếc máy",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       },
       "delete": {
@@ -615,7 +615,7 @@
         ],
         "summary": "Admin: Xóa hoặc ngừng sử dụng chiếc máy",
         "tags": [
-          "Inventory (Staff & Admin)"
+          "Inventory (Admin)"
         ]
       }
     },
@@ -644,6 +644,21 @@
           }
         },
         "summary": "Cấu hình liên hệ công khai & danh sách chi nhánh",
+        "tags": [
+          "Catalog & Favorites"
+        ]
+      }
+    },
+    "/payment-settings": {
+      "get": {
+        "operationId": "CatalogController_getPaymentSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Cấu hình chuyển khoản công khai, không lưu cache",
         "tags": [
           "Catalog & Favorites"
         ]
@@ -748,6 +763,24 @@
                 "FILM",
                 "INSTANT"
               ]
+            }
+          },
+          {
+            "name": "filmFormat",
+            "required": false,
+            "in": "query",
+            "description": "Định dạng phim, ví dụ 35mm hoặc 120",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sensorSize",
+            "required": false,
+            "in": "query",
+            "description": "Cỡ cảm biến số, ví dụ Full Frame hoặc APS-C",
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -2407,7 +2440,7 @@
         ],
         "summary": "Tổng quan vận hành cửa hàng trong ngày",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2500,7 +2533,7 @@
         ],
         "summary": "Danh sách đơn thuê cho nhân viên",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2530,7 +2563,7 @@
         ],
         "summary": "Xin URL tải ảnh biên bản giao nhận lên Storage",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2559,7 +2592,7 @@
         ],
         "summary": "Xác nhận đơn thuê (PENDING -> CONFIRMED)",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2598,7 +2631,7 @@
         ],
         "summary": "Từ chối đơn thuê (PENDING -> REJECTED)",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2637,7 +2670,7 @@
         ],
         "summary": "Nhân viên hủy đơn thuê",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2676,7 +2709,7 @@
         ],
         "summary": "Giao máy & thu tiền (CONFIRMED -> PICKED_UP)",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2715,7 +2748,7 @@
         ],
         "summary": "Nhận lại máy (PICKED_UP -> RETURNED)",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2754,7 +2787,7 @@
         ],
         "summary": "Hoàn tất đơn & hoàn cọc (RETURNED -> COMPLETED)",
         "tags": [
-          "Staff Operations"
+          "Admin Operations"
         ]
       }
     },
@@ -2778,7 +2811,6 @@
               "type": "string",
               "enum": [
                 "RENTER",
-                "STAFF",
                 "ADMIN"
               ]
             }
@@ -3893,10 +3925,16 @@
               "image/jpeg",
               "image/png"
             ]
+          },
+          "fileSize": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5242880
           }
         },
         "required": [
-          "contentType"
+          "contentType",
+          "fileSize"
         ]
       },
       "SubmitPaymentProofDto": {
@@ -4134,7 +4172,6 @@
               "type": "string",
               "enum": [
                 "RENTER",
-                "STAFF",
                 "ADMIN"
               ]
             }

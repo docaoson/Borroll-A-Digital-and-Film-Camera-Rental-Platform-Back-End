@@ -4,7 +4,7 @@ import { BookingStatus, Role } from '@prisma/client';
 export type BookingAction =
   'cancel' | 'confirm' | 'reject' | 'pickup' | 'return' | 'complete';
 
-export type ViewerRole = 'CUSTOMER' | 'STAFF' | 'ADMIN';
+export type ViewerRole = 'CUSTOMER' | 'ADMIN';
 
 const ALLOWED_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   [BookingStatus.PENDING]: [
@@ -39,9 +39,7 @@ export function computeViewerContext(
   userRoles: string[],
 ): { viewerRole: ViewerRole; allowedActions: BookingAction[] } {
   const isAdmin = userRoles.includes(Role.ADMIN);
-  const isStaff = isAdmin || userRoles.includes(Role.STAFF);
-
-  if (!isStaff) {
+  if (!isAdmin) {
     const allowedActions: BookingAction[] =
       status === BookingStatus.PENDING || status === BookingStatus.CONFIRMED
         ? ['cancel']
@@ -49,7 +47,7 @@ export function computeViewerContext(
     return { viewerRole: 'CUSTOMER', allowedActions };
   }
 
-  const viewerRole: ViewerRole = isAdmin ? 'ADMIN' : 'STAFF';
+  const viewerRole: ViewerRole = 'ADMIN';
   let allowedActions: BookingAction[] = [];
 
   switch (status) {

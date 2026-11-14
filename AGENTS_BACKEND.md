@@ -6,7 +6,7 @@ Repo: `borroll-backend`. Đọc hết file này trước khi viết code. Bối 
 
 Borroll là **website của một cửa hàng cho thuê máy ảnh** (số và film). Shop sở hữu máy, cho thuê từ kho của mình ở các chi nhánh (Tây Hồ, Thanh Xuân), khách nhận và trả máy tại cửa hàng, **tiền do shop thu trực tiếp**. Không còn chủ máy, hoa hồng, duyệt tin, KYC.
 
-Vai trò: `RENTER` (Khách), `STAFF` (nhân viên), `ADMIN`. `HOST` còn trong enum nhưng **không dùng**.
+Vai trò ứng dụng đang được cấp: `RENTER` (Khách) và `ADMIN`. `STAFF` là giá trị legacy còn trong enum/database nhưng không được cấp mới và không có quyền truy cập endpoint; xóa enum và xử lý các bản ghi `user_roles` cần migration có kế hoạch riêng. `HOST` còn trong enum nhưng **không dùng**.
 
 **Đang giả định** (xem `BORROLL_STORE_PLAN.md` mục 1.5): shop cho thuê từ kho riêng, hai chi nhánh, nhận trả cùng chi nhánh, không giao hàng, thanh toán tại quầy (nhân viên ghi sổ thủ công), chỉ cho thuê (film bán kèm là món thêm), một mẫu máy có nhiều chiếc.
 
@@ -59,8 +59,8 @@ Node 22, NestJS (TypeScript strict), PostgreSQL trên Supabase, Prisma, JWT + `a
 **Xác thực** (đã làm ở 2A, giữ nguyên): `argon2`; email lưu chữ thường; access token JWT 15 phút (hết hạn → `401 TOKEN_EXPIRED`); refresh token ngẫu nhiên, chỉ lưu hash SHA-256, cookie `httpOnly`, `SameSite=Lax`, `path=/api/v1/auth`, sống 30 ngày, **xoay vòng nguyên tử** (dùng `updateMany` với điều kiện `revokedAt: null` rồi kiểm tra `count`), dùng lại token đã thu hồi thì thu hồi cả `family_id`. Đăng nhập luôn chạy một lần `argon2.verify` (kể cả khi email không tồn tại, với hash giả) và chỉ kiểm tra khóa tài khoản sau khi mật khẩu đúng. Đăng ký bắt lỗi trùng email của Prisma (`P2002`) và trả `409 EMAIL_ALREADY_USED`.
 
 **Phân quyền hai lớp (bắt buộc):**
-1. **RBAC:** `JwtAuthGuard` toàn cục, `@Public()`, `OptionalJwtAuthGuard` cho endpoint 🌐*, `@Roles('STAFF','ADMIN')` / `@Roles('ADMIN')`. Vai trò nằm trong access token. `ADMIN` được coi là bao gồm quyền `STAFF`.
-2. **Ownership:** khách chỉ xem và hủy đơn của chính mình, truy vấn luôn ràng buộc theo `userId` từ token. Tài nguyên không thuộc mình trả `404`, không trả `403`. STAFF và ADMIN xem được mọi đơn.
+1. **RBAC:** `JwtAuthGuard` toàn cục, `@Public()`, `OptionalJwtAuthGuard` cho endpoint 🌐*, các endpoint quản trị/vận hành đều yêu cầu `@Roles('ADMIN')`. Vai trò nằm trong access token. Không có kế thừa quyền từ role legacy `STAFF`.
+2. **Ownership:** khách chỉ xem và hủy đơn của chính mình, truy vấn luôn ràng buộc theo `userId` từ token. Tài nguyên không thuộc mình trả `404`, không trả `403`. Chỉ ADMIN xem được mọi đơn.
 
 Mọi thao tác của nhân viên và admin về đơn, tiền, giá, vai trò ghi vào `audit_logs`. Admin không tự bỏ quyền `ADMIN` của chính mình.
 
@@ -152,13 +152,13 @@ Cài trong `booking.state-machine.ts` dưới dạng bảng chuyển hợp lệ;
 | Người xem | Trạng thái | `allowedActions` |
 |---|---|---|
 | Khách của đơn | `PENDING`, `CONFIRMED` | `["cancel"]` |
-| STAFF / ADMIN | `PENDING` | `["confirm","reject","cancel"]` |
-| STAFF / ADMIN | `CONFIRMED` | `["pickup","cancel"]` |
-| STAFF / ADMIN | `PICKED_UP` | `["return"]` |
-| STAFF / ADMIN | `RETURNED` | `["complete"]` |
+| ADMIN | `PENDING` | `["confirm","reject","cancel"]` |
+| ADMIN | `CONFIRMED` | `["pickup","cancel"]` |
+| ADMIN | `PICKED_UP` | `["return"]` |
+| ADMIN | `RETURNED` | `["complete"]` |
 | Bất kỳ ai | `COMPLETED`, `REJECTED`, `CANCELLED` | `[]` |
 
-Endpoint thực thi phải kiểm tra lại đúng bảng này. `viewerRole` là `CUSTOMER`, `STAFF` hoặc `ADMIN`.
+Endpoint thực thi phải kiểm tra lại đúng bảng này. `viewerRole` là `CUSTOMER` hoặc `ADMIN`.
 
 ### 7.6 Giao máy, nhận máy, thu chi (`operations`)
 
@@ -231,7 +231,7 @@ Chỉ commit `.env.example`, không commit `.env` hay khóa thật.
 2. Đơn `REJECTED`/`CANCELLED`/`COMPLETED` giải phóng chiếc máy; ngày trả không chặn người khác nhận.
 3. Khóa bảo trì chặn đặt trùng; khóa trùng đơn đang hoạt động bị `409 BOOKING_DATE_UNAVAILABLE`; **chạy đồng thời giữa "tạo đơn" và "khóa bảo trì"** cho cùng một chiếc thì chỉ một thao tác thành công.
 4. State machine: chuyển sai bị `409`; bảng `allowedActions` đúng theo người xem và trạng thái.
-5. Phân quyền: khách không xem được đơn người khác (`404`); STAFF vào được `/staff/*`; khách bị `403` ở `/staff/*` và `/admin/*`; STAFF bị `403` ở `/admin/*`.
+5. Phân quyền: khách không xem được đơn người khác (`404`); role legacy STAFF và khách đều bị `403` ở `/staff/*` và `/admin/*`; chỉ ADMIN thực hiện thao tác vận hành.
 6. Tính tiền: 1 ngày, 3 ngày, 7 ngày, 8 ngày (có giá tuần), đơn nhiều món có film; `quote` khớp đơn thật.
 7. `INCOMPATIBLE_ITEMS` khi ống kính khác ngàm; `MODEL_NOT_BOOKABLE` khi mẫu bị ẩn.
 8. `pickup`: thiếu ảnh hoặc `idChecked = false` → `400`; thu thiếu tiền → `422 PAYMENT_INCOMPLETE`. `complete`: hoàn cọc tính đúng, tổng `charges` vượt cọc → `400`, sổ thu chi không sửa được.

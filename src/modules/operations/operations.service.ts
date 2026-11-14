@@ -341,7 +341,7 @@ export class OperationsService {
         }),
         writeAuditLog(tx, {
           actorId,
-          action: 'BOOKING_CANCELLED_BY_STAFF',
+          action: 'BOOKING_CANCELLED_BY_ADMIN',
           targetType: 'BOOKING',
           targetId: bookingId,
           metadata: { fromStatus: existing.status, reason },

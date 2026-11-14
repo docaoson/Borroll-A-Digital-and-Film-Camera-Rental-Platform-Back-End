@@ -252,7 +252,7 @@ export class PaymentService {
   }
 
   async history(bookingId: string, userId: string, roles: string[]) {
-    const staff = roles.includes(Role.ADMIN) || roles.includes(Role.STAFF);
+    const staff = roles.includes(Role.ADMIN);
     const payment = await this.prisma.manualPayment.findFirst({
       where: { booking: { id: bookingId, ...(staff ? {} : { userId }) } },
       include: {

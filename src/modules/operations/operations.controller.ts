@@ -23,9 +23,9 @@ import {
 } from './dto/operations.dto';
 import { OperationsService } from './operations.service';
 
-@ApiTags('Staff Operations')
+@ApiTags('Admin Operations')
 @ApiBearerAuth()
-@Roles(Role.STAFF)
+@Roles(Role.ADMIN)
 @Controller('staff')
 export class OperationsController {
   constructor(private readonly operationsService: OperationsService) {}

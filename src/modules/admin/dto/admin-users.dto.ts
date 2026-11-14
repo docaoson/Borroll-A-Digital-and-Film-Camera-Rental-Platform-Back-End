@@ -19,9 +19,9 @@ export class ListAdminUsersQueryDto {
   @IsString()
   q?: string;
 
-  @ApiPropertyOptional({ enum: [Role.RENTER, Role.STAFF, Role.ADMIN] })
+  @ApiPropertyOptional({ enum: [Role.RENTER, Role.ADMIN] })
   @IsOptional()
-  @IsIn([Role.RENTER, Role.STAFF, Role.ADMIN])
+  @IsIn([Role.RENTER, Role.ADMIN])
   role?: Role;
 
   @ApiPropertyOptional({ default: 1 })
@@ -42,13 +42,13 @@ export class ListAdminUsersQueryDto {
 
 export class UpdateAdminUserDto {
   @ApiPropertyOptional({
-    enum: [Role.RENTER, Role.STAFF, Role.ADMIN],
+    enum: [Role.RENTER, Role.ADMIN],
     isArray: true,
   })
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
-  @IsIn([Role.RENTER, Role.STAFF, Role.ADMIN], { each: true })
+  @IsIn([Role.RENTER, Role.ADMIN], { each: true })
   roles?: Role[];
 
   @ApiPropertyOptional({ enum: UserStatus })

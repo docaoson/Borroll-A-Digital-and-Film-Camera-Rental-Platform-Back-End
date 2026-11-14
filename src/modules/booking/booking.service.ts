@@ -184,8 +184,7 @@ export class BookingService {
       booking.status,
       viewerRoles,
     );
-    const isStaff =
-      viewerRoles.includes(Role.STAFF) || viewerRoles.includes(Role.ADMIN);
+    const isStaff = viewerRoles.includes(Role.ADMIN);
 
     const summary: Record<string, unknown> = {
       id: booking.id,
@@ -265,8 +264,7 @@ export class BookingService {
 
   async formatBookingDetail(booking: BookingWithDetail, viewerRoles: string[]) {
     const base = this.formatBookingSummary(booking, viewerRoles);
-    const isStaff =
-      viewerRoles.includes(Role.STAFF) || viewerRoles.includes(Role.ADMIN);
+    const isStaff = viewerRoles.includes(Role.ADMIN);
     const handoverBucket = this.getHandoverBucket();
 
     const handovers = await Promise.all(
@@ -619,8 +617,7 @@ export class BookingService {
     userId: string,
     userRoles: string[],
   ) {
-    const isStaff =
-      userRoles.includes(Role.STAFF) || userRoles.includes(Role.ADMIN);
+    const isStaff = userRoles.includes(Role.ADMIN);
 
     const booking = await this.prisma.booking.findFirst({
       where: isStaff ? { id: bookingId } : { id: bookingId, userId },

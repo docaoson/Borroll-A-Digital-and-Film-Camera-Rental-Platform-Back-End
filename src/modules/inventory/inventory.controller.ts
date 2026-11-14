@@ -23,27 +23,27 @@ import {
 } from './dto/unit.dto';
 import { InventoryService } from './inventory.service';
 
-@ApiTags('Inventory (Staff & Admin)')
+@ApiTags('Inventory (Admin)')
 @ApiBearerAuth()
 @Controller()
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
-  @Roles(Role.STAFF)
+  @Roles(Role.ADMIN)
   @Get('staff/units')
   @ApiOperation({ summary: 'Danh sách từng chiếc máy trong kho' })
   listStaffUnits(@Query() query: ListUnitsQueryDto) {
     return this.inventoryService.listStaffUnits(query);
   }
 
-  @Roles(Role.STAFF)
+  @Roles(Role.ADMIN)
   @Get('staff/unit-blocks')
   @ApiOperation({ summary: 'Danh sách lịch khóa bảo trì' })
   listUnitBlocks(@Query() query: ListUnitBlocksQueryDto) {
     return this.inventoryService.listUnitBlocks(query);
   }
 
-  @Roles(Role.STAFF)
+  @Roles(Role.ADMIN)
   @Post('staff/unit-blocks')
   @ApiOperation({ summary: 'Tạo lịch khóa bảo trì cho một chiếc máy' })
   createUnitBlock(
@@ -53,7 +53,7 @@ export class InventoryController {
     return this.inventoryService.createUnitBlock(dto, actorId);
   }
 
-  @Roles(Role.STAFF)
+  @Roles(Role.ADMIN)
   @Delete('staff/unit-blocks/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Xóa lịch khóa bảo trì' })

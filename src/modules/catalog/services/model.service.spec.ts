@@ -60,10 +60,13 @@ describe('ModelService camera classification filters', () => {
       rentalModel: { findMany: jest.fn().mockResolvedValue(models) },
       category: {
         findMany: jest.fn().mockResolvedValue(categories),
-        findUnique: jest.fn().mockResolvedValue({
-          slug: 'film-slr',
-          parent: { slug: 'may-film' },
-        }),
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(
+          where.id === 'missing-category'
+            ? null
+            : where.id === 'digital-root'
+              ? { slug: 'may-digital', parent: null }
+              : { slug: 'film-slr', parent: { slug: 'may-film' } },
+        )),
       },
       favorite: { findMany: jest.fn().mockResolvedValue([]) },
     } as unknown as PrismaService;
@@ -98,11 +101,19 @@ describe('ModelService camera classification filters', () => {
     expect(result.facets.sensorSizes).toEqual([{ value: 'Full Frame', count: 1 }]);
   });
 
-  it('rejects assigning a camera to a category under a different group', async () => {
+  it('accepts a film subtype and digital root under the matching selected type', async () => {
     const assertCategory = (service as any).assertCameraCategoryMatchesType.bind(service);
 
-    await expect(assertCategory('CAMERA', 'DIGITAL', 'film-category')).rejects.toThrow(
-      'Loại thiết bị phải thuộc đúng nhóm Film, Digital hoặc Instant đã chọn.',
+    await expect(assertCategory('FILM', 'film-category')).resolves.toBeUndefined();
+    await expect(assertCategory('DIGITAL', 'digital-root')).resolves.toBeUndefined();
+  });
+
+  it('rejects a camera category that conflicts with the selected type', async () => {
+    const assertCategory = (service as any).assertCameraCategoryMatchesType.bind(service);
+
+    await expect(assertCategory('DIGITAL', 'film-category')).rejects.toThrow(
+      'Danh mục dòng máy không thuộc loại máy ảnh Film hoặc Digital đã chọn.',
     );
+    await expect(assertCategory('FILM', 'missing-category')).rejects.toThrow();
   });
 });

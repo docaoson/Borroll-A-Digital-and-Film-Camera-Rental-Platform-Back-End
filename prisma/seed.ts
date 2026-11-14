@@ -31,18 +31,6 @@ async function main() {
       roles: [Role.ADMIN],
     },
     {
-      email: 'staff1@borroll.vn',
-      fullName: 'Nhân viên Tây Hồ',
-      phone: '0902000002',
-      roles: [Role.STAFF],
-    },
-    {
-      email: 'staff2@borroll.vn',
-      fullName: 'Nhân viên Thanh Xuân',
-      phone: '0903000003',
-      roles: [Role.STAFF],
-    },
-    {
       email: 'renter1@borroll.vn',
       fullName: 'Khách hàng Trần Tuấn Anh',
       phone: '0904000004',

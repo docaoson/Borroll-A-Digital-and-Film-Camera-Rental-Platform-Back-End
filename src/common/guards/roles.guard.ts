@@ -15,7 +15,7 @@ export class RolesGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<
-      (Role | 'RENTER' | 'STAFF' | 'ADMIN')[]
+      (Role | 'RENTER' | 'ADMIN')[]
     >(ROLES_KEY, [context.getHandler(), context.getClass()]);
 
     if (!requiredRoles || requiredRoles.length === 0) {
@@ -25,12 +25,7 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
     const userRoles = request.user?.roles ?? [];
 
-    // ADMIN includes STAFF permissions per AGENTS_BACKEND.md §5
-    const effectiveRoles = userRoles.includes(Role.ADMIN)
-      ? Array.from(new Set([...userRoles, Role.STAFF]))
-      : userRoles;
-
-    const hasRole = requiredRoles.some((role) => effectiveRoles.includes(role));
+    const hasRole = requiredRoles.some((role) => userRoles.includes(role));
     if (!hasRole) {
       throw new ForbiddenException({
         code: 'FORBIDDEN',
