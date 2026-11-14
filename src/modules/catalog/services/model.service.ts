@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { CameraType, Prisma, UnitCondition, UnitStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { writeAuditLog } from '../../../common/utils/audit.util';
+import { slugify } from '../../../common/utils/slug.util';
 import { PrismaService } from '../../../infra/database/prisma.service';
 import {
   STORAGE_SERVICE,
@@ -30,6 +31,35 @@ import {
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 const MODEL_CATEGORIES_CACHE_TTL_MS = 5 * 60 * 1000;
 const ACTIVE_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
+const MODEL_SLUG_MAX_ATTEMPTS = 5;
+
+function isModelSlugUniqueViolation(error: unknown): boolean {
+  if (
+    !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+    error.code !== 'P2002'
+  ) {
+    return false;
+  }
+
+  const target = error.meta?.target;
+  const constraint = error.meta?.constraint;
+  return [target, constraint].some((value) => {
+    if (Array.isArray(value)) {
+      return value.some(
+        (field) => typeof field === 'string' && field.toLowerCase() === 'slug',
+      );
+    }
+    return typeof value === 'string' && value.toLowerCase().includes('slug');
+  });
+}
+
+function duplicateModelSlugException(): ConflictException {
+  return new ConflictException({
+    code: 'VALIDATION_ERROR',
+    message: 'Slug m\u1eabu m\u00e1y \u0111\u00e3 t\u1ed3n t\u1ea1i.',
+    details: { fields: { slug: 'Slug \u0111\u00e3 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng' } },
+  });
+}
 
 const CONTENT_TYPE_EXTENSIONS: Record<ImagePresignDto['contentType'], string> =
   {
@@ -854,95 +884,110 @@ export class ModelService {
   }
 
   async createAdminModel(dto: CreateModelDto, actorId: string) {
-    try {
-      if (dto.kind === 'CAMERA') {
-        if (
-          dto.cameraType !== CameraType.FILM &&
-          dto.cameraType !== CameraType.DIGITAL
-        ) {
-          throw new BadRequestException(
-            'Vui lòng chọn loại máy ảnh Film hoặc Digital.',
-          );
-        }
-        await this.assertCameraCategoryMatchesType(
-          dto.cameraType,
-          dto.categoryId,
+    if (dto.kind === 'CAMERA') {
+      if (
+        dto.cameraType !== CameraType.FILM &&
+        dto.cameraType !== CameraType.DIGITAL
+      ) {
+        throw new BadRequestException(
+          'Vui lòng chọn loại máy ảnh Film hoặc Digital.',
         );
       }
-      const created = await this.prisma.$transaction(async (tx) => {
-        const model = await tx.rentalModel.create({
-          data: {
-            kind: dto.kind,
-            categoryId: dto.categoryId,
-            brandId: dto.brandId,
-            name: dto.name.trim(),
-            slug: dto.slug.trim().toLowerCase(),
-            description: dto.description.trim(),
-            cameraType: dto.kind === 'CAMERA' ? dto.cameraType : null,
-            mount: dto.mount ?? null,
-            filmFormat: dto.filmFormat ?? null,
-            pricePerDay: dto.pricePerDay,
-            pricePerWeek: dto.pricePerWeek ?? null,
-            deposit: dto.deposit,
-            isActive: dto.isActive ?? true,
-            isFeatured: dto.isFeatured ?? false,
-            lastInspectedAt: dto.lastInspectedAt
-              ? new Date(dto.lastInspectedAt)
-              : null,
-            inspectionNotes: dto.inspectionNotes
-              ? (dto.inspectionNotes as unknown as Prisma.InputJsonValue)
-              : undefined,
-          },
-        });
+    }
 
-        // Tự động tạo 1 unit vật lý ban đầu tại chi nhánh mặc định để máy sẵn sàng cho thuê
-        const defaultBranch = await tx.branch.findFirst({
-          where: { isActive: true },
-          orderBy: { createdAt: 'asc' },
-        });
-        if (defaultBranch) {
-          const prefix =
-            (model.slug || 'CAM')
-              .toUpperCase()
-              .replace(/[^A-Z0-9]/g, '')
-              .slice(0, 4) || 'CAM';
-          const randomNum = Math.floor(100 + Math.random() * 900);
-          await tx.rentalUnit.create({
-            data: {
-              modelId: model.id,
-              branchId: defaultBranch.id,
-              serialNumber: `${prefix}-01-${randomNum}`,
-              condition: UnitCondition.EXCELLENT,
-              status: UnitStatus.AVAILABLE,
-              notes: 'Thiết bị sẵn sàng cho thuê',
-            },
+    const suppliedSlug = dto.slug?.trim().toLowerCase();
+    const baseSlug = suppliedSlug || slugify(dto.name);
+
+    for (let attempt = 0; attempt < MODEL_SLUG_MAX_ATTEMPTS; attempt += 1) {
+      const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
+      try {
+        return await this.createAdminModelWithSlug(dto, actorId, slug);
+      } catch (error: unknown) {
+        if (!isModelSlugUniqueViolation(error)) throw error;
+        if (suppliedSlug) throw duplicateModelSlugException();
+        if (attempt === MODEL_SLUG_MAX_ATTEMPTS - 1) {
+          throw new ConflictException({
+            code: 'SLUG_GENERATION_FAILED',
+            message: 'Không thể tạo slug duy nhất sau nhiều lần thử.',
+            details: {},
           });
         }
+      }
+    }
 
-        await writeAuditLog(tx, {
-          actorId,
-          action: 'MODEL_CREATED',
-          targetType: 'RENTAL_MODEL',
-          targetId: model.id,
-          metadata: { slug: model.slug, pricePerDay: model.pricePerDay },
-        });
-        return model;
+    throw new ConflictException({
+      code: 'SLUG_GENERATION_FAILED',
+      message: 'Không thể tạo slug duy nhất sau nhiều lần thử.',
+      details: {},
+    });
+  }
+
+  private async createAdminModelWithSlug(
+    dto: CreateModelDto,
+    actorId: string,
+    slug: string,
+  ) {
+    const created = await this.prisma.$transaction(async (tx) => {
+      const model = await tx.rentalModel.create({
+        data: {
+          kind: dto.kind,
+          categoryId: dto.categoryId,
+          brandId: dto.brandId,
+          name: dto.name.trim(),
+          slug,
+          description: dto.description.trim(),
+          cameraType: dto.kind === 'CAMERA' ? dto.cameraType : null,
+          mount: dto.mount ?? null,
+          filmFormat: dto.filmFormat ?? null,
+          pricePerDay: dto.pricePerDay,
+          pricePerWeek: dto.pricePerWeek ?? null,
+          deposit: dto.deposit,
+          isActive: dto.isActive ?? true,
+          isFeatured: dto.isFeatured ?? false,
+          lastInspectedAt: dto.lastInspectedAt
+            ? new Date(dto.lastInspectedAt)
+            : null,
+          inspectionNotes: dto.inspectionNotes
+            ? (dto.inspectionNotes as unknown as Prisma.InputJsonValue)
+            : undefined,
+        },
       });
-      this.invalidateModelsCache();
-      return this.getAdminModel(created.id);
-    } catch (err: unknown) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ConflictException({
-          code: 'VALIDATION_ERROR',
-          message: 'Slug mẫu máy đã tồn tại.',
-          details: { fields: { slug: 'Slug đã được sử dụng' } },
+
+      // Tự động tạo 1 unit vật lý ban đầu tại chi nhánh mặc định để máy sẵn sàng cho thuê
+      const defaultBranch = await tx.branch.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (defaultBranch) {
+        const prefix =
+          (model.slug || 'CAM')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
+            .slice(0, 4) || 'CAM';
+        const randomNum = Math.floor(100 + Math.random() * 900);
+        await tx.rentalUnit.create({
+          data: {
+            modelId: model.id,
+            branchId: defaultBranch.id,
+            serialNumber: `${prefix}-01-${randomNum}`,
+            condition: UnitCondition.EXCELLENT,
+            status: UnitStatus.AVAILABLE,
+            notes: 'Thiết bị sẵn sàng cho thuê',
+          },
         });
       }
-      throw err;
-    }
+
+      await writeAuditLog(tx, {
+        actorId,
+        action: 'MODEL_CREATED',
+        targetType: 'RENTAL_MODEL',
+        targetId: model.id,
+        metadata: { slug: model.slug, pricePerDay: model.pricePerDay },
+      });
+      return model;
+    });
+    this.invalidateModelsCache();
+    return this.getAdminModel(created.id);
   }
 
   async updateAdminModel(id: string, dto: UpdateModelDto, actorId: string) {
@@ -1031,16 +1076,7 @@ export class ModelService {
       this.invalidateModelsCache();
       return this.getAdminModel(id);
     } catch (err: unknown) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ConflictException({
-          code: 'VALIDATION_ERROR',
-          message: 'Slug mẫu máy đã tồn tại.',
-          details: { fields: { slug: 'Slug đã được sử dụng' } },
-        });
-      }
+      if (isModelSlugUniqueViolation(err)) throw duplicateModelSlugException();
       throw err;
     }
   }

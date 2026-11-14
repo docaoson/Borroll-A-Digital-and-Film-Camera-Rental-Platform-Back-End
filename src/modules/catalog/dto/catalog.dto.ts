@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  Matches,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -16,6 +17,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { CameraType, ImageKind, ModelKind } from '@prisma/client';
+import { MODEL_SLUG_PATTERN } from '../../../common/utils/slug.util';
 
 export class ListModelsQueryDto {
   @ApiPropertyOptional()
@@ -195,10 +197,20 @@ export class CreateModelDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'B\u1ecf qua \u0111\u1ec3 Backend t\u1ef1 sinh t\u1eeb t\u00ean s\u1ea3n ph\u1ea9m.',
+    pattern: MODEL_SLUG_PATTERN.source,
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsString()
   @IsNotEmpty()
-  slug!: string;
+  @Matches(MODEL_SLUG_PATTERN, {
+    message: 'Slug ch\u1ec9 g\u1ed3m ch\u1eef th\u01b0\u1eddng kh\u00f4ng d\u1ea5u, s\u1ed1 v\u00e0 d\u1ea5u g\u1ea1ch ngang.',
+  })
+  slug?: string;
 
   @ApiProperty()
   @IsString()
@@ -284,10 +296,16 @@ export class UpdateModelDto {
   @IsNotEmpty()
   name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ pattern: MODEL_SLUG_PATTERN.source, description: 'If omitted, the existing slug is preserved.' })
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsString()
   @IsNotEmpty()
+  @Matches(MODEL_SLUG_PATTERN, {
+    message: 'Slug ch\u1ec9 g\u1ed3m ch\u1eef th\u01b0\u1eddng kh\u00f4ng d\u1ea5u, s\u1ed1 v\u00e0 d\u1ea5u g\u1ea1ch ngang.',
+  })
   slug?: string;
 
   @ApiPropertyOptional()

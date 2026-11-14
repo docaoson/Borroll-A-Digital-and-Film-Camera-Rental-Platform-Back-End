@@ -117,3 +117,114 @@ describe('ModelService camera classification filters', () => {
     await expect(assertCategory('FILM', 'missing-category')).rejects.toThrow();
   });
 });
+
+describe('ModelService admin slug creation and updates', () => {
+  const makeCreatedModel = (id: string, slug: string) => ({
+    id,
+    slug,
+    name: 'Pentax 17',
+    images: [],
+  });
+  const duplicateSlugError = () =>
+    new (require('@prisma/client').Prisma.PrismaClientKnownRequestError)(
+      'Unique constraint failed',
+      { code: 'P2002', clientVersion: 'test', meta: { target: ['slug'] } },
+    );
+
+  let service: ModelService;
+  let create: jest.Mock;
+  let update: jest.Mock;
+  let findUnique: jest.Mock;
+
+  beforeEach(() => {
+    create = jest.fn();
+    update = jest.fn();
+    findUnique = jest.fn().mockImplementation(({ where }: any) =>
+      Promise.resolve(makeCreatedModel(where.id, where.id === 'existing' ? 'saved-slug' : 'pentax-17')),
+    );
+    const transaction = jest.fn((callback: (tx: any) => unknown) =>
+      callback({
+        rentalModel: { create, update },
+        branch: { findFirst: jest.fn().mockResolvedValue(null) },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      }),
+    );
+    const prisma = {
+      $transaction: transaction,
+      rentalModel: { findUnique, create, update },
+      category: { findUnique: jest.fn() },
+    } as unknown as PrismaService;
+    service = new ModelService(
+      prisma,
+      { get: jest.fn() } as unknown as ConfigService,
+      {} as InventoryService,
+      { getPublicUrl: jest.fn() } as unknown as StorageService,
+    );
+  });
+
+  const createDto = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'ACCESSORY',
+    categoryId: 'category',
+    brandId: 'brand',
+    name: 'Pentax 17',
+    description: 'Test model',
+    pricePerDay: 100,
+    deposit: 100,
+    ...overrides,
+  }) as any;
+
+  it('creates a model with a generated slug when slug is omitted', async () => {
+    create.mockResolvedValue(makeCreatedModel('created', 'pentax-17'));
+
+    await service.createAdminModel(createDto(), 'admin');
+
+    expect(create.mock.calls[0][0].data.slug).toBe('pentax-17');
+  });
+
+  it('creates a model with a supplied slug', async () => {
+    create.mockResolvedValue(makeCreatedModel('created', 'custom-slug'));
+
+    await service.createAdminModel(createDto({ slug: 'custom-slug' }), 'admin');
+
+    expect(create.mock.calls[0][0].data.slug).toBe('custom-slug');
+  });
+
+  it('adds a numeric suffix when a generated slug already exists', async () => {
+    create.mockImplementation(({ data }: any) =>
+      data.slug === 'pentax-17' ? Promise.reject(duplicateSlugError()) : Promise.resolve(makeCreatedModel('created', data.slug)),
+    );
+
+    await service.createAdminModel(createDto(), 'admin');
+
+    expect(create.mock.calls.map((call) => call[0].data.slug)).toEqual(['pentax-17', 'pentax-17-2']);
+  });
+
+  it('retries generated slugs after concurrent P2002 conflicts', async () => {
+    create.mockImplementation(({ data }: any) =>
+      data.slug === 'pentax-17-3' ? Promise.resolve(makeCreatedModel('created', data.slug)) : Promise.reject(duplicateSlugError()),
+    );
+
+    await service.createAdminModel(createDto(), 'admin');
+
+    expect(create.mock.calls.map((call) => call[0].data.slug)).toEqual(['pentax-17', 'pentax-17-2', 'pentax-17-3']);
+  });
+
+  it('keeps the legacy conflict message when a supplied slug is duplicated', async () => {
+    create.mockRejectedValue(duplicateSlugError());
+
+    await expect(service.createAdminModel(createDto({ slug: 'same-slug' }), 'admin')).rejects.toThrow('Slug m\u1eabu m\u00e1y \u0111\u00e3 t\u1ed3n t\u1ea1i.');
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not change the stored slug when update omits slug', async () => {
+    const existing = { id: 'existing', kind: 'ACCESSORY', categoryId: 'category', cameraType: null, slug: 'saved-slug', images: [] };
+    findUnique.mockResolvedValue(existing);
+    update.mockResolvedValue({ ...existing, name: 'Renamed' });
+
+    await service.updateAdminModel('existing', { name: 'Renamed' } as any, 'admin');
+
+    expect(update.mock.calls[0][0].data.slug).toBeUndefined();
+  });
+});
+
+

@@ -3249,7 +3249,9 @@
             "type": "string"
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Optional on create. If omitted, generated from name; a numeric suffix is added when needed to avoid duplicates. On update, omission preserves the existing slug."
           },
           "description": {
             "type": "string"
@@ -3306,7 +3308,6 @@
           "categoryId",
           "brandId",
           "name",
-          "slug",
           "description",
           "pricePerDay",
           "deposit"
@@ -3333,7 +3334,9 @@
             "type": "string"
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Optional. If omitted, the existing slug is preserved."
           },
           "description": {
             "type": "string"

@@ -415,7 +415,7 @@ CRUD theo kiểu REST (`POST` tạo, `PATCH /:id` sửa, `GET` danh sách/chi ti
 
 | Nhóm | Endpoint | Trường chính |
 |---|---|---|
-| Mẫu máy | `/admin/models` | `kind`, `categoryId`, `brandId`, `name`, `slug`, `description`, `cameraType`, `mount`, `filmFormat`, `pricePerDay`, `pricePerWeek`, `deposit`, `isActive`, `isFeatured`, `lastInspectedAt`, `inspectionNotes` (`[ {label, ok} ]`) |
+| Rental models | `/admin/models` | `kind`, `categoryId`, `brandId`, `name`, `slug` (optional on create; if omitted, generated from name, with `-2`, `-3`, ... suffixes on collisions; omitted on update preserves the saved slug; supplied slugs must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`), `description`, `cameraType`, `mount`, `filmFormat`, `pricePerDay`, `pricePerWeek`, `deposit`, `isActive`, `isFeatured`, `lastInspectedAt`, `inspectionNotes` (`[ {label, ok} ]`) |
 | Thông số (cho AI) | `PUT /admin/models/:id/specs` | body là đối tượng `specs` (xem `BORROLL_STORE_PLAN.md` mục 5.4) |
 | Ảnh máy | `POST /admin/models/:id/images/presign` → `PUT` file → `POST /admin/models/:id/images` `{ "path", "kind", "caption", "sampleLens", "sortOrder" }`; `PATCH .../images/order` `{ "imageIds": [...] }`; `DELETE .../images/:imageId` | Ảnh JPG/PNG/WebP, tối đa 5 MB |
 | Từng chiếc máy | `/admin/units` | `modelId`, `branchId`, `serialNumber`, `condition`, `status`, `notes`, `purchasedAt` |
