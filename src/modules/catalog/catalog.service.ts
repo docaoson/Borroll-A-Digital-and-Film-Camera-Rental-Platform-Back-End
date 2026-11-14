@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   CreateBranchDto,
   CreateBrandDto,
@@ -45,7 +45,7 @@ export { PublicContactSettingsResponse } from './services/contact-settings.servi
  * - ModelService: Mẫu máy, ảnh, thông số & tra cứu lịch
  */
 @Injectable()
-export class CatalogService implements OnModuleInit {
+export class CatalogService {
   constructor(
     public readonly branchService: BranchService,
     public readonly categoryService: CategoryService,
@@ -55,18 +55,6 @@ export class CatalogService implements OnModuleInit {
     public readonly favoriteService: FavoriteService,
     public readonly modelService: ModelService,
   ) {}
-
-  async onModuleInit(): Promise<void> {
-    if (process.env.NODE_ENV === 'test') return;
-    await Promise.allSettled([
-      this.branchService.getPublicBranches(),
-      this.categoryService.getPublicCategories(),
-      this.brandService.getPublicBrands(),
-      this.filmProductService.getPublicFilmProducts(),
-      this.contactSettingsService.getPublicContactSettings(),
-      this.modelService.warmUpCache(),
-    ]);
-  }
 
   // 1. Branch
   getPublicBranches() {

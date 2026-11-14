@@ -240,16 +240,6 @@ export class ModelService {
     return rows;
   }
 
-  public async warmUpCache(): Promise<void> {
-    const [, activeModels] = await Promise.all([
-      this.getCachedAllCategories(),
-      this.getCachedActiveModels(),
-    ]);
-    await Promise.allSettled(
-      activeModels.map((m) => this.getPublicModelBySlug(m.slug)),
-    );
-  }
-
   private getRentalImagesBucket(): string {
     return this.configService.get<string>(
       'STORAGE_BUCKET_RENTAL_IMAGES',
