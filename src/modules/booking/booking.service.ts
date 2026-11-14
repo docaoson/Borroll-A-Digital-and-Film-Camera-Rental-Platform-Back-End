@@ -74,9 +74,29 @@ export type BookingWithDetail = Prisma.BookingGetPayload<{
   include: typeof BOOKING_INCLUDE_DETAIL;
 }>;
 
+interface IdempotencyRecord {
+  status: 'IN_FLIGHT' | 'COMPLETED';
+  promise?: Promise<any>;
+  response?: any;
+  createdAt: number;
+}
+
 @Injectable()
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
+  private readonly idempotencyMap = new Map<string, IdempotencyRecord>();
+  private readonly IDEMPOTENCY_TTL_MS = 15 * 60 * 1000; // 15 phút
+
+  private cleanExpiredIdempotencyKeys() {
+    const now = Date.now();
+    if (this.idempotencyMap.size > 100) {
+      for (const [key, entry] of this.idempotencyMap.entries()) {
+        if (now - entry.createdAt > this.IDEMPOTENCY_TTL_MS) {
+          this.idempotencyMap.delete(key);
+        }
+      }
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -305,7 +325,64 @@ export class BookingService {
     };
   }
 
-  async createBooking(userId: string, dto: CreateBookingDto) {
+  async createBooking(
+    userId: string,
+    dto: CreateBookingDto,
+    idempotencyKey?: string,
+  ) {
+    if (idempotencyKey) {
+      const scopedKey = `${userId}:${idempotencyKey.trim()}`;
+      this.cleanExpiredIdempotencyKeys();
+
+      const existing = this.idempotencyMap.get(scopedKey);
+      if (existing) {
+        if (existing.status === 'COMPLETED' && existing.response) {
+          this.logger.log(
+            `[Idempotency] Returning cached booking for user=${userId}, key=${idempotencyKey}`,
+          );
+          return existing.response;
+        }
+        if (existing.status === 'IN_FLIGHT' && existing.promise) {
+          this.logger.log(
+            `[Idempotency] Awaiting in-flight booking for user=${userId}, key=${idempotencyKey}`,
+          );
+          return await existing.promise;
+        }
+      }
+
+      let resolvePromise!: (val: any) => void;
+      let rejectPromise!: (err: any) => void;
+      const inFlightPromise = new Promise((resolve, reject) => {
+        resolvePromise = resolve;
+        rejectPromise = reject;
+      });
+
+      this.idempotencyMap.set(scopedKey, {
+        status: 'IN_FLIGHT',
+        promise: inFlightPromise,
+        createdAt: Date.now(),
+      });
+
+      try {
+        const result = await this.executeCreateBooking(userId, dto);
+        this.idempotencyMap.set(scopedKey, {
+          status: 'COMPLETED',
+          response: result,
+          createdAt: Date.now(),
+        });
+        resolvePromise(result);
+        return result;
+      } catch (error) {
+        this.idempotencyMap.delete(scopedKey);
+        rejectPromise(error);
+        throw error;
+      }
+    }
+
+    return this.executeCreateBooking(userId, dto);
+  }
+
+  private async executeCreateBooking(userId: string, dto: CreateBookingDto) {
     const calculated = await this.pricingService.calculateQuote(dto);
     const ttlHours = this.configService.get<number>(
       'BOOKING_PENDING_TTL_HOURS',

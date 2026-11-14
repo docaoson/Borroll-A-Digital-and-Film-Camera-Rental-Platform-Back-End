@@ -87,6 +87,14 @@ export class CreateBookingDto extends QuoteBookingDto {
   @IsOptional()
   @IsString()
   setupPlanId?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Khóa chống gửi trùng lặp (Idempotency Key)',
+    example: 'd9b1c23a-5f4b-4a7c-95b8-d21b76174a6b',
+  })
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
 }
 
 export class ListMyBookingsQueryDto {

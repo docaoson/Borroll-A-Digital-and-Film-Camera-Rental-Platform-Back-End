@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -38,8 +39,10 @@ export class BookingController {
   createBooking(
     @CurrentUser('userId') userId: string,
     @Body() dto: CreateBookingDto,
+    @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
-    return this.bookingService.createBooking(userId, dto);
+    const key = (idempotencyKeyHeader || dto.idempotencyKey || '').trim();
+    return this.bookingService.createBooking(userId, dto, key || undefined);
   }
 
   @ApiBearerAuth()
