@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 import { Response } from 'express';
 
 @Catch()
@@ -41,7 +42,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
             : {};
       }
     } else {
-      this.logger.error('Unhandled exception:', exception);
+      const errName =
+        exception instanceof Error ? exception.name : 'UnknownError';
+      const errCode =
+        typeof (exception as { code?: unknown })?.code === 'string'
+          ? ` [code=${(exception as { code: string }).code}]`
+          : '';
+      this.logger.error(`Unhandled exception: ${errName}${errCode}`);
+      if (process.env.SENTRY_DSN) {
+        Sentry.captureException(exception);
+      }
     }
 
     response.status(status).json({

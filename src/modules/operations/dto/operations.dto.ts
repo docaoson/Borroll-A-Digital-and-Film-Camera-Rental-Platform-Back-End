@@ -72,6 +72,8 @@ export class ReasonBodyDto {
   reason!: string;
 }
 
+export const MAX_HANDOVER_PHOTO_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
+
 export class HandoverPhotoPresignDto {
   @ApiProperty()
   @IsString()
@@ -83,6 +85,19 @@ export class HandoverPhotoPresignDto {
     message: 'Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP',
   })
   contentType!: 'image/jpeg' | 'image/png' | 'image/webp';
+
+  @ApiPropertyOptional({
+    example: 1024000,
+    description: 'Kích thước tệp tin tính bằng byte (tối đa 8MB)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Kích thước tệp tin phải là số nguyên' })
+  @Min(1, { message: 'Kích thước tệp tin phải lớn hơn 0' })
+  @Max(MAX_HANDOVER_PHOTO_UPLOAD_BYTES, {
+    message: 'Dung lượng ảnh biên bản tối đa là 8 MB',
+  })
+  fileSize?: number;
 }
 
 export class HandoverChecklistItemDto {

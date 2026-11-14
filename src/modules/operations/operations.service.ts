@@ -404,10 +404,19 @@ export class OperationsService {
 
     const bucket = this.getHandoverBucket();
     const expectedPrefix = `handover/${bookingId}/`;
+    const handoverFileConstraint = {
+      maxBytes: 8 * 1024 * 1024,
+      allowedMimeTypes: Object.keys(CONTENT_TYPE_EXTENSIONS),
+    };
     if (dto.photoPaths.length > 0) {
       await Promise.all(
         dto.photoPaths.map((path) =>
-          this.storageService.assertOwnedFile(bucket, path, expectedPrefix),
+          this.storageService.assertOwnedFile(
+            bucket,
+            path,
+            expectedPrefix,
+            handoverFileConstraint,
+          ),
         ),
       );
     }
@@ -517,10 +526,19 @@ export class OperationsService {
 
     const bucket = this.getHandoverBucket();
     const expectedPrefix = `handover/${bookingId}/`;
+    const handoverFileConstraint = {
+      maxBytes: 8 * 1024 * 1024,
+      allowedMimeTypes: Object.keys(CONTENT_TYPE_EXTENSIONS),
+    };
     if (dto.photoPaths.length > 0) {
       await Promise.all(
         dto.photoPaths.map((path) =>
-          this.storageService.assertOwnedFile(bucket, path, expectedPrefix),
+          this.storageService.assertOwnedFile(
+            bucket,
+            path,
+            expectedPrefix,
+            handoverFileConstraint,
+          ),
         ),
       );
     }

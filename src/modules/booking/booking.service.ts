@@ -347,13 +347,13 @@ export class BookingService {
       if (existing) {
         if (existing.status === 'COMPLETED' && existing.response) {
           this.logger.log(
-            `[Idempotency] Returning cached booking for user=${userId}, key=${idempotencyKey}`,
+            '[Idempotency] Returning cached booking response for duplicate request',
           );
           return existing.response;
         }
         if (existing.status === 'IN_FLIGHT' && existing.promise) {
           this.logger.log(
-            `[Idempotency] Awaiting in-flight booking for user=${userId}, key=${idempotencyKey}`,
+            '[Idempotency] Awaiting in-flight booking transaction for duplicate request',
           );
           return await existing.promise;
         }

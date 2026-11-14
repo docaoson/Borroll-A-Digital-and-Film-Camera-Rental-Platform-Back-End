@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
-import { SignedUploadResult, StorageService } from './storage.service';
+import {
+  AssertOwnedFileOptions,
+  SignedUploadResult,
+  StorageService,
+} from './storage.service';
 
 @Injectable()
 export class SupabaseStorageService implements StorageService {
@@ -83,6 +87,7 @@ export class SupabaseStorageService implements StorageService {
     bucket: string,
     path: string,
     expectedPrefix: string,
+    options?: AssertOwnedFileOptions,
   ): Promise<void> {
     if (!path || path.includes('..') || !path.startsWith(expectedPrefix)) {
       throw new BadRequestException({
@@ -108,11 +113,48 @@ export class SupabaseStorageService implements StorageService {
       .from(bucket)
       .list(folder, { search: fileName, limit: 20 });
 
-    if (error || !data || !data.some((item) => item.name === fileName)) {
+    const matchedFile = data?.find((item) => item.name === fileName);
+    if (error || !matchedFile) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
         message: 'Tệp tin chưa được tải lên hoặc không tồn tại.',
         details: {},
+      });
+    }
+
+    const metadata = (matchedFile.metadata ?? {}) as Record<string, unknown>;
+    const uploadedSize =
+      typeof metadata.size === 'number' ? metadata.size : undefined;
+    const uploadedMime =
+      typeof metadata.mimetype === 'string'
+        ? metadata.mimetype.toLowerCase()
+        : undefined;
+
+    if (
+      options?.maxBytes !== undefined &&
+      uploadedSize !== undefined &&
+      uploadedSize > options.maxBytes
+    ) {
+      await this.remove(bucket, path);
+      const maxMb = Math.round((options.maxBytes / (1024 * 1024)) * 10) / 10;
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: `Dung lượng tệp tin vượt quá giới hạn cho phép (${maxMb} MB).`,
+        details: { maxBytes: options.maxBytes, uploadedSize },
+      });
+    }
+
+    if (
+      options?.allowedMimeTypes &&
+      options.allowedMimeTypes.length > 0 &&
+      uploadedMime &&
+      !options.allowedMimeTypes.includes(uploadedMime)
+    ) {
+      await this.remove(bucket, path);
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Định dạng tệp tin tải lên không được hỗ trợ.',
+        details: { allowedMimeTypes: options.allowedMimeTypes, uploadedMime },
       });
     }
   }

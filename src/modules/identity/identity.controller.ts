@@ -146,6 +146,7 @@ export class IdentityController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('auth/refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Làm mới Access Token qua cookie Refresh Token' })

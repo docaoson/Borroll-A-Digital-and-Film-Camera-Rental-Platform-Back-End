@@ -364,12 +364,27 @@ export class UpdateModelSpecsDto {
   beginnerNotes?: unknown[];
 }
 
+export const MAX_CATALOG_IMAGE_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
+
 export class ImagePresignDto {
   @ApiProperty({ enum: ['image/jpeg', 'image/png', 'image/webp'] })
   @IsIn(['image/jpeg', 'image/png', 'image/webp'], {
     message: 'Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP',
   })
   contentType!: 'image/jpeg' | 'image/png' | 'image/webp';
+
+  @ApiPropertyOptional({
+    example: 1024000,
+    description: 'Kích thước tệp tin tính bằng byte (tối đa 8MB)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Kích thước tệp tin phải là số nguyên' })
+  @Min(1, { message: 'Kích thước tệp tin phải lớn hơn 0' })
+  @Max(MAX_CATALOG_IMAGE_UPLOAD_BYTES, {
+    message: 'Dung lượng ảnh mẫu máy tối đa là 8 MB',
+  })
+  fileSize?: number;
 }
 
 export class CreateModelImageDto {

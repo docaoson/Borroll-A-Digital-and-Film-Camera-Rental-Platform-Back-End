@@ -1065,6 +1065,10 @@ export class ModelService {
       this.getRentalImagesBucket(),
       dto.path,
       `models/${modelId}/`,
+      {
+        maxBytes: 8 * 1024 * 1024,
+        allowedMimeTypes: Object.keys(CONTENT_TYPE_EXTENSIONS),
+      },
     );
 
     const image = await this.prisma.$transaction(async (tx) => {

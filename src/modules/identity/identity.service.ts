@@ -19,7 +19,11 @@ import {
   STORAGE_SERVICE,
   StorageService,
 } from '../../infra/storage/storage.service';
-import { AvatarContentType, AvatarPresignDto } from './dto/avatar-presign.dto';
+import {
+  AvatarContentType,
+  AvatarPresignDto,
+  MAX_AVATAR_UPLOAD_BYTES,
+} from './dto/avatar-presign.dto';
 import {
   LoginDto,
   sanitizeEmailInput,
@@ -449,6 +453,10 @@ export class IdentityService implements OnModuleInit {
           bucket,
           dto.avatarPath,
           `avatars/${userId}/`,
+          {
+            maxBytes: MAX_AVATAR_UPLOAD_BYTES,
+            allowedMimeTypes: Object.keys(CONTENT_TYPE_EXTENSIONS),
+          },
         );
         data.avatarPath = dto.avatarPath;
       }

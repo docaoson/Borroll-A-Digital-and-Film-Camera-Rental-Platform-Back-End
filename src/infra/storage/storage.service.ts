@@ -4,6 +4,11 @@ export interface SignedUploadResult {
   token: string;
 }
 
+export interface AssertOwnedFileOptions {
+  maxBytes?: number;
+  allowedMimeTypes?: readonly string[];
+}
+
 export interface StorageService {
   createUploadUrl(bucket: string, path: string): Promise<SignedUploadResult>;
   getPublicUrl(bucket: string, path: string): string;
@@ -16,6 +21,7 @@ export interface StorageService {
     bucket: string,
     path: string,
     expectedPrefix: string,
+    options?: AssertOwnedFileOptions,
   ): Promise<void>;
   remove(bucket: string, path: string): Promise<void>;
 }

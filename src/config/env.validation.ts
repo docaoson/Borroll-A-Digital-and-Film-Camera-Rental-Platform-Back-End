@@ -164,6 +164,10 @@ export class EnvironmentVariables {
   @IsNumber()
   @IsOptional()
   AI_DAILY_LIMIT_PER_USER: number = 20;
+
+  @IsString()
+  @IsOptional()
+  SENTRY_DSN?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

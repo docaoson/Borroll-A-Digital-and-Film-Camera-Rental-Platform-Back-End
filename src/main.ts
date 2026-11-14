@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as Sentry from '@sentry/node';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -77,6 +78,15 @@ async function bootstrap() {
 
   // 8. Swagger Docs: Gating - Tắt khi NODE_ENV = 'production'
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const sentryDsn = configService.get<string>('SENTRY_DSN');
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      environment: nodeEnv,
+    });
+    logger.log('Sentry error tracking initialized');
+  }
+
   if (nodeEnv !== 'production') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Borroll API')
