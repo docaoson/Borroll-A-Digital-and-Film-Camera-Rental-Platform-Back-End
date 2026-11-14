@@ -31,38 +31,68 @@ export class BranchService {
     expiresAt: number;
   } | null = null;
 
+  private refreshPromise: Promise<{
+    items: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      address: string;
+      phone: string;
+      openHours: string;
+      mapUrl: string | null;
+    }>;
+  }> | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
   public invalidateBranchCache(): void {
     this.publicBranchesCache = null;
+    this.refreshPromise = null;
+  }
+
+  private fetchAndCachePublicBranches() {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.prisma.branch
+      .findMany({
+        where: { isActive: true },
+        orderBy: [{ name: 'asc' }],
+      })
+      .then((items) => {
+        const data = {
+          items: items.map((b) => ({
+            id: b.id,
+            slug: b.slug,
+            name: b.name,
+            address: b.address,
+            phone: b.phone,
+            openHours: b.openHours,
+            mapUrl: b.mapUrl,
+          })),
+        };
+        this.publicBranchesCache = {
+          data,
+          expiresAt: Date.now() + BRANCH_CACHE_TTL_MS,
+        };
+        this.refreshPromise = null;
+        return data;
+      })
+      .catch((err) => {
+        this.refreshPromise = null;
+        throw err;
+      });
+    return this.refreshPromise;
   }
 
   async getPublicBranches() {
     const now = Date.now();
-    if (this.publicBranchesCache && now < this.publicBranchesCache.expiresAt) {
+    if (this.publicBranchesCache) {
+      if (now >= this.publicBranchesCache.expiresAt) {
+        this.fetchAndCachePublicBranches().catch(() => {});
+      }
       return this.publicBranchesCache.data;
     }
 
-    const items = await this.prisma.branch.findMany({
-      where: { isActive: true },
-      orderBy: [{ name: 'asc' }],
-    });
-    const data = {
-      items: items.map((b) => ({
-        id: b.id,
-        slug: b.slug,
-        name: b.name,
-        address: b.address,
-        phone: b.phone,
-        openHours: b.openHours,
-        mapUrl: b.mapUrl,
-      })),
-    };
-    this.publicBranchesCache = {
-      data,
-      expiresAt: now + BRANCH_CACHE_TTL_MS,
-    };
-    return data;
+    return this.fetchAndCachePublicBranches();
   }
 
   async findActiveBranchBySlug(slug: string) {

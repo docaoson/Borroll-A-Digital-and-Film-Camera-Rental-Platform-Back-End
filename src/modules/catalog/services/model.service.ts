@@ -157,17 +157,7 @@ export class ModelService {
     return true;
   }
 
-  private async getCachedActiveModels(): Promise<CachedActiveModel[]> {
-    const now = Date.now();
-    const currentUnitsVersion = this.getCurrentUnitsVersion();
-    if (
-      this.activeModelsCache &&
-      now < this.activeModelsCache.expiresAt &&
-      this.activeModelsCache.unitsVersion === currentUnitsVersion
-    ) {
-      return this.activeModelsCache.data;
-    }
-
+  private fetchAndCacheActiveModels(): Promise<CachedActiveModel[]> {
     if (this.activeModelsInFlight) {
       return this.activeModelsInFlight;
     }
@@ -206,9 +196,38 @@ export class ModelService {
     return this.activeModelsInFlight;
   }
 
+  private async getCachedActiveModels(): Promise<CachedActiveModel[]> {
+    const now = Date.now();
+    const currentUnitsVersion = this.getCurrentUnitsVersion();
+    if (
+      this.activeModelsCache &&
+      this.activeModelsCache.unitsVersion === currentUnitsVersion
+    ) {
+      if (now >= this.activeModelsCache.expiresAt) {
+        this.fetchAndCacheActiveModels().catch(() => {});
+      }
+      return this.activeModelsCache.data;
+    }
+
+    return this.fetchAndCacheActiveModels();
+  }
+
   private async getCachedAllCategories() {
     const now = Date.now();
-    if (this.allCategoriesCache && now < this.allCategoriesCache.expiresAt) {
+    if (this.allCategoriesCache) {
+      if (now >= this.allCategoriesCache.expiresAt) {
+        this.prisma.category
+          .findMany({
+            select: { id: true, slug: true, name: true, parentId: true },
+          })
+          .then((rows) => {
+            this.allCategoriesCache = {
+              data: rows,
+              expiresAt: Date.now() + MODEL_CATEGORIES_CACHE_TTL_MS,
+            };
+          })
+          .catch(() => {});
+      }
       return this.allCategoriesCache.data;
     }
     const rows = await this.prisma.category.findMany({
@@ -219,6 +238,16 @@ export class ModelService {
       expiresAt: now + MODEL_CATEGORIES_CACHE_TTL_MS,
     };
     return rows;
+  }
+
+  public async warmUpCache(): Promise<void> {
+    const [, activeModels] = await Promise.all([
+      this.getCachedAllCategories(),
+      this.getCachedActiveModels(),
+    ]);
+    await Promise.allSettled(
+      activeModels.map((m) => this.getPublicModelBySlug(m.slug)),
+    );
   }
 
   private getRentalImagesBucket(): string {

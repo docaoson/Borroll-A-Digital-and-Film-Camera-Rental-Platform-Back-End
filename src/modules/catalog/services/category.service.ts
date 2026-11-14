@@ -30,62 +30,80 @@ export class CategoryService {
     expiresAt: number;
   } | null = null;
 
+  private refreshPromise: Promise<{
+    items: Array<{ id: string; slug: string; name: string; children: unknown[] }>;
+  }> | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
   public invalidateCategoryCache(): void {
     this.publicCategoriesCache = null;
+    this.refreshPromise = null;
+  }
+
+  private fetchAndCachePublicCategories() {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.prisma.category
+      .findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      })
+      .then((rows) => {
+        const nodeMap = new Map<string, CategoryTreeNode>();
+        for (const row of rows) {
+          nodeMap.set(row.id, {
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+            parentId: row.parentId,
+            sortOrder: row.sortOrder,
+            children: [],
+          });
+        }
+
+        const roots: CategoryTreeNode[] = [];
+        for (const node of nodeMap.values()) {
+          if (!node.parentId) {
+            roots.push(node);
+          } else if (nodeMap.has(node.parentId)) {
+            nodeMap.get(node.parentId)!.children.push(node);
+          }
+        }
+
+        const stripMeta = (
+          node: CategoryTreeNode,
+        ): { id: string; slug: string; name: string; children: unknown[] } => ({
+          id: node.id,
+          slug: node.slug,
+          name: node.name,
+          children: node.children.map(stripMeta),
+        });
+
+        const data = { items: roots.map(stripMeta) };
+        this.publicCategoriesCache = {
+          data,
+          expiresAt: Date.now() + CATEGORY_CACHE_TTL_MS,
+        };
+        this.refreshPromise = null;
+        return data;
+      })
+      .catch((err) => {
+        this.refreshPromise = null;
+        throw err;
+      });
+    return this.refreshPromise;
   }
 
   async getPublicCategories() {
     const now = Date.now();
-    if (
-      this.publicCategoriesCache &&
-      now < this.publicCategoriesCache.expiresAt
-    ) {
+    if (this.publicCategoriesCache) {
+      if (now >= this.publicCategoriesCache.expiresAt) {
+        this.fetchAndCachePublicCategories().catch(() => {});
+      }
       return this.publicCategoriesCache.data;
     }
 
-    const rows = await this.prisma.category.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    });
-
-    const nodeMap = new Map<string, CategoryTreeNode>();
-    for (const row of rows) {
-      nodeMap.set(row.id, {
-        id: row.id,
-        slug: row.slug,
-        name: row.name,
-        parentId: row.parentId,
-        sortOrder: row.sortOrder,
-        children: [],
-      });
-    }
-
-    const roots: CategoryTreeNode[] = [];
-    for (const node of nodeMap.values()) {
-      if (!node.parentId) {
-        roots.push(node);
-      } else if (nodeMap.has(node.parentId)) {
-        nodeMap.get(node.parentId)!.children.push(node);
-      }
-    }
-
-    const stripMeta = (
-      node: CategoryTreeNode,
-    ): { id: string; slug: string; name: string; children: unknown[] } => ({
-      id: node.id,
-      slug: node.slug,
-      name: node.name,
-      children: node.children.map(stripMeta),
-    });
-
-    const data = { items: roots.map(stripMeta) };
-    this.publicCategoriesCache = {
-      data,
-      expiresAt: now + CATEGORY_CACHE_TTL_MS,
-    };
-    return data;
+    return this.fetchAndCachePublicCategories();
   }
 
   async listAdminCategories(query: PaginationQueryDto) {

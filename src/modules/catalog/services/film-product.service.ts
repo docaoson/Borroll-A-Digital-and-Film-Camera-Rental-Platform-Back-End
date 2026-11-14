@@ -31,6 +31,18 @@ export class FilmProductService {
     expiresAt: number;
   } | null = null;
 
+  private refreshPromise: Promise<{
+    items: Array<{
+      id: string;
+      name: string;
+      iso: number;
+      format: string;
+      price: number;
+      inStock: boolean;
+      imageUrl: string | null;
+    }>;
+  }> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -40,6 +52,7 @@ export class FilmProductService {
 
   public invalidateFilmProductCache(): void {
     this.publicFilmProductsCache = null;
+    this.refreshPromise = null;
   }
 
   private getModelImageUrl(path: string): string {
@@ -50,35 +63,49 @@ export class FilmProductService {
     return this.storageService.getPublicUrl(bucket, path);
   }
 
+  private fetchAndCachePublicFilmProducts() {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.prisma.filmProduct
+      .findMany({
+        where: { isActive: true, inStock: true },
+        orderBy: [{ name: 'asc' }],
+      })
+      .then((items) => {
+        const data = {
+          items: items.map((f) => ({
+            id: f.id,
+            name: f.name,
+            iso: f.iso,
+            format: f.format,
+            price: f.price,
+            inStock: f.inStock,
+            imageUrl: f.imagePath ? this.getModelImageUrl(f.imagePath) : null,
+          })),
+        };
+        this.publicFilmProductsCache = {
+          data,
+          expiresAt: Date.now() + FILM_PRODUCT_CACHE_TTL_MS,
+        };
+        this.refreshPromise = null;
+        return data;
+      })
+      .catch((err) => {
+        this.refreshPromise = null;
+        throw err;
+      });
+    return this.refreshPromise;
+  }
+
   async getPublicFilmProducts() {
     const now = Date.now();
-    if (
-      this.publicFilmProductsCache &&
-      now < this.publicFilmProductsCache.expiresAt
-    ) {
+    if (this.publicFilmProductsCache) {
+      if (now >= this.publicFilmProductsCache.expiresAt) {
+        this.fetchAndCachePublicFilmProducts().catch(() => {});
+      }
       return this.publicFilmProductsCache.data;
     }
 
-    const items = await this.prisma.filmProduct.findMany({
-      where: { isActive: true, inStock: true },
-      orderBy: [{ name: 'asc' }],
-    });
-    const data = {
-      items: items.map((f) => ({
-        id: f.id,
-        name: f.name,
-        iso: f.iso,
-        format: f.format,
-        price: f.price,
-        inStock: f.inStock,
-        imageUrl: f.imagePath ? this.getModelImageUrl(f.imagePath) : null,
-      })),
-    };
-    this.publicFilmProductsCache = {
-      data,
-      expiresAt: now + FILM_PRODUCT_CACHE_TTL_MS,
-    };
-    return data;
+    return this.fetchAndCachePublicFilmProducts();
   }
 
   async findFilmProductsByIds(ids: string[]) {

@@ -21,34 +21,56 @@ export class BrandService {
     expiresAt: number;
   } | null = null;
 
+  private refreshPromise: Promise<{
+    items: Array<{ id: string; slug: string; name: string }>;
+  }> | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
   public invalidateBrandCache(): void {
     this.publicBrandsCache = null;
+    this.refreshPromise = null;
+  }
+
+  private fetchAndCachePublicBrands() {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.prisma.brand
+      .findMany({
+        where: { isActive: true },
+        orderBy: [{ name: 'asc' }],
+      })
+      .then((items) => {
+        const data = {
+          items: items.map((b) => ({
+            id: b.id,
+            slug: b.slug,
+            name: b.name,
+          })),
+        };
+        this.publicBrandsCache = {
+          data,
+          expiresAt: Date.now() + BRAND_CACHE_TTL_MS,
+        };
+        this.refreshPromise = null;
+        return data;
+      })
+      .catch((err) => {
+        this.refreshPromise = null;
+        throw err;
+      });
+    return this.refreshPromise;
   }
 
   async getPublicBrands() {
     const now = Date.now();
-    if (this.publicBrandsCache && now < this.publicBrandsCache.expiresAt) {
+    if (this.publicBrandsCache) {
+      if (now >= this.publicBrandsCache.expiresAt) {
+        this.fetchAndCachePublicBrands().catch(() => {});
+      }
       return this.publicBrandsCache.data;
     }
 
-    const items = await this.prisma.brand.findMany({
-      where: { isActive: true },
-      orderBy: [{ name: 'asc' }],
-    });
-    const data = {
-      items: items.map((b) => ({
-        id: b.id,
-        slug: b.slug,
-        name: b.name,
-      })),
-    };
-    this.publicBrandsCache = {
-      data,
-      expiresAt: now + BRAND_CACHE_TTL_MS,
-    };
-    return data;
+    return this.fetchAndCachePublicBrands();
   }
 
   async listAdminBrands(query: PaginationQueryDto) {
