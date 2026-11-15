@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CameraType, Prisma, UnitCondition, UnitStatus } from '@prisma/client';
+import { CameraType, Prisma, UnitCondition, UnitStatus, BookingStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { writeAuditLog } from '../../../common/utils/audit.util';
 import { PrismaService } from '../../../infra/database/prisma.service';
@@ -1037,8 +1037,20 @@ export class ModelService {
       });
     }
 
-    // Nếu đã phát sinh đơn thuê, chỉ chuyển sang isActive = false để giữ dữ liệu lịch sử tài chính/đơn thuê
-    if (existing._count.bookingUnits > 0) {
+    // Kiểm tra xem có đơn thuê THỰC SỰ ĐANG HOẠT ĐỘNG HOẶC ĐÃ HOÀN THÀNH (cần bảo lưu hóa đơn/tài chính) hay không
+    // Các đơn bị hủy (CANCELLED) hoặc từ chối (REJECTED) không cản trở việc xóa vĩnh viễn sản phẩm test/sản phẩm thử nghiệm
+    const activeBookingCount = await this.prisma.bookingUnit.count({
+      where: {
+        modelId: id,
+        booking: {
+          status: {
+            notIn: [BookingStatus.CANCELLED, BookingStatus.REJECTED],
+          },
+        },
+      },
+    });
+
+    if (activeBookingCount > 0) {
       await this.prisma.$transaction(async (tx) => {
         await tx.rentalModel.update({
           where: { id },
@@ -1056,10 +1068,14 @@ export class ModelService {
       return { id, isActive: false, hidden: true, deleted: false };
     }
 
-    // Nếu chưa từng có đơn thuê (kể cả đã có units vật lý trong kho), xóa sạch units, blocks và xóa vĩnh viễn model
+    // Nếu chỉ có đơn đã hủy hoặc chưa từng có đơn thuê thành công:
+    // Dọn dẹp an toàn bookingUnits của các đơn đã hủy/từ chối, blocks, units và xóa vĩnh viễn model
     await this.prisma.$transaction(async (tx) => {
       const unitIds = existing.units.map((u) => u.id);
       if (unitIds.length > 0) {
+        await tx.bookingUnit.deleteMany({
+          where: { unitId: { in: unitIds } },
+        });
         await tx.unitBlock.deleteMany({
           where: { unitId: { in: unitIds } },
         });
@@ -1067,6 +1083,10 @@ export class ModelService {
           where: { id: { in: unitIds } },
         });
       }
+
+      await tx.bookingUnit.deleteMany({
+        where: { modelId: id },
+      });
 
       await tx.rentalModel.delete({ where: { id } });
       await writeAuditLog(tx, {
