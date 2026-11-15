@@ -379,6 +379,11 @@ export class UpdateModelSpecsDto {
   @IsObject()
   exposure?: Record<string, unknown>;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Cỡ cảm biến máy ảnh Digital, ví dụ Full Frame, APS-C.' })
+  @IsOptional()
+  @IsString()
+  sensorSize?: string | null;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
