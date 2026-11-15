@@ -1024,7 +1024,10 @@ export class ModelService {
   async deleteAdminModel(id: string, actorId: string) {
     const existing = await this.prisma.rentalModel.findUnique({
       where: { id },
-      include: { _count: { select: { bookingUnits: true, units: true } } },
+      include: {
+        _count: { select: { bookingUnits: true, units: true } },
+        units: { select: { id: true } },
+      },
     });
     if (!existing) {
       throw new NotFoundException({
@@ -1034,7 +1037,8 @@ export class ModelService {
       });
     }
 
-    if (existing._count.bookingUnits > 0 || existing._count.units > 0) {
+    // Nếu đã phát sinh đơn thuê, chỉ chuyển sang isActive = false để giữ dữ liệu lịch sử tài chính/đơn thuê
+    if (existing._count.bookingUnits > 0) {
       await this.prisma.$transaction(async (tx) => {
         await tx.rentalModel.update({
           where: { id },
@@ -1049,10 +1053,21 @@ export class ModelService {
         });
       });
       this.invalidateModelsCache();
-      return { id, isActive: false, hidden: true };
+      return { id, isActive: false, hidden: true, deleted: false };
     }
 
+    // Nếu chưa từng có đơn thuê (kể cả đã có units vật lý trong kho), xóa sạch units, blocks và xóa vĩnh viễn model
     await this.prisma.$transaction(async (tx) => {
+      const unitIds = existing.units.map((u) => u.id);
+      if (unitIds.length > 0) {
+        await tx.unitBlock.deleteMany({
+          where: { unitId: { in: unitIds } },
+        });
+        await tx.rentalUnit.deleteMany({
+          where: { id: { in: unitIds } },
+        });
+      }
+
       await tx.rentalModel.delete({ where: { id } });
       await writeAuditLog(tx, {
         actorId,
