@@ -148,6 +148,31 @@ export class PaginationQueryDto {
   @IsString()
   q?: string;
 
+  @ApiPropertyOptional({ enum: ModelKind })
+  @IsOptional()
+  @IsEnum(ModelKind)
+  kind?: ModelKind;
+
+  @ApiPropertyOptional({ enum: CameraType })
+  @IsOptional()
+  @IsEnum(CameraType)
+  cameraType?: CameraType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  brandId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ enum: ['true', 'false'] })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  isActive?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)

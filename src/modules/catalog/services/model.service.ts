@@ -801,6 +801,32 @@ export class ModelService {
         { slug: { contains: q, mode: 'insensitive' } },
       ];
     }
+    if (query.kind) {
+      where.kind = query.kind;
+    }
+    if (query.cameraType) {
+      where.cameraType = query.cameraType;
+    }
+    if (query.brandId?.trim()) {
+      where.brandId = query.brandId.trim();
+    }
+    if (query.categoryId?.trim()) {
+      const catId = query.categoryId.trim();
+      const childCats = await this.prisma.category.findMany({
+        where: { parentId: catId },
+        select: { id: true },
+      });
+      if (childCats.length > 0) {
+        where.categoryId = { in: [catId, ...childCats.map((c) => c.id)] };
+      } else {
+        where.categoryId = catId;
+      }
+    }
+    if (query.isActive === 'true') {
+      where.isActive = true;
+    } else if (query.isActive === 'false') {
+      where.isActive = false;
+    }
 
     const [items, total] = await Promise.all([
       this.prisma.rentalModel.findMany({
@@ -813,7 +839,20 @@ export class ModelService {
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
             take: 1,
           },
-          _count: { select: { units: true } },
+          _count: {
+            select: {
+              units: true,
+              bookingUnits: {
+                where: {
+                  booking: {
+                    status: {
+                      notIn: [BookingStatus.CANCELLED, BookingStatus.REJECTED],
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         orderBy: [{ createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
