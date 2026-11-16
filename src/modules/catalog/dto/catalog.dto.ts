@@ -383,6 +383,11 @@ export class UpdateModelDto {
 export class UpdateModelSpecsDto {
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  sensorSize?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsObject()
   exposure?: Record<string, unknown>;
 
