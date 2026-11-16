@@ -171,24 +171,65 @@ export class ModelService {
       .toLowerCase();
   }
 
-  private matchesSearchTokens(
+  /**
+   * Tính điểm liên quan (relevance score) của model đối với chuỗi tìm kiếm.
+   * - 0: Không khớp
+   * - Điểm càng cao thì xếp hạng hiển thị càng ưu tiên lên đầu:
+   *   + Khớp chính xác toàn bộ tên: 1000 điểm
+   *   + Tên bắt đầu bằng toàn bộ query: 500 điểm
+   *   + Từ đầu tiên của tên bắt đầu bằng query token: 200 điểm
+   *   + Các từ tiếp theo bắt đầu bằng query token: 50 điểm
+   *   + Khớp chính xác một từ: cộng thêm 30 điểm
+   */
+  private computeSearchRelevance(
     model: CachedActiveModel,
+    rawQuery: string,
     normTokens: string[],
-  ): boolean {
-    // Chỉ tìm kiếm theo Tên sản phẩm (Model Name), không tìm theo Thương hiệu
-    // (Thương hiệu đã có bộ lọc riêng biệt ở thanh bên - Sidebar Brand Filters)
-    // Tách các từ trong tên máy thành danh sách các từ riêng biệt (word tokens)
-    const nameWords = model.normName.split(/[\s\-_/.,+()]+/).filter(Boolean);
+  ): number {
+    if (!normTokens.length) return 0;
 
+    const normName = model.normName.trim();
+    const cleanRaw = rawQuery.trim().toLowerCase();
+
+    // 1. Nếu chỉ gõ 1 ký tự: chuẩn UX tìm kiếm yêu cầu chỉ khớp với chữ cái bắt đầu của tên sản phẩm
+    // Tránh việc gõ 1 ký tự đơn lẻ làm lọt các từ ngẫu nhiên ở giữa tên
+    if (cleanRaw.length === 1) {
+      if (normName.startsWith(cleanRaw)) {
+        return 100;
+      }
+      return 0;
+    }
+
+    // 2. Khi gõ từ 2 ký tự trở lên:
+    const nameWords = normName.split(/[\s\-_/.,+()]+/).filter(Boolean);
+
+    // Kiểm tra tất cả các token phải khớp tiền tố của ít nhất một từ trong tên máy
     for (const token of normTokens) {
-      // Mỗi token tìm kiếm phải là tiền tố (prefix) của ít nhất một từ trong tên máy
-      // Ví dụ: token 'c' chỉ khớp với 'Canon', không khớp với các máy có tên khác
-      const matchesWordPrefix = nameWords.some((word) => word.startsWith(token));
-      if (!matchesWordPrefix) {
-        return false;
+      const matchesAnyWord = nameWords.some((word) => word.startsWith(token));
+      if (!matchesAnyWord) {
+        return 0;
       }
     }
-    return true;
+
+    let score = 10;
+    if (normName === cleanRaw) {
+      score += 1000;
+    } else if (normName.startsWith(cleanRaw)) {
+      score += 500;
+    } else if (nameWords.length > 0 && nameWords[0].startsWith(normTokens[0])) {
+      score += 200;
+    } else {
+      score += 50;
+    }
+
+    // Cộng điểm thưởng nếu khớp nguyên vẹn từ
+    for (const token of normTokens) {
+      if (nameWords.includes(token)) {
+        score += 30;
+      }
+    }
+
+    return score;
   }
 
   private fetchAndCacheActiveModels(): Promise<CachedActiveModel[]> {
@@ -366,13 +407,15 @@ export class ModelService {
       this.getCachedActiveModels(),
     ]);
 
-    const normSearchTokens = query.q?.trim()
-      ? query.q
-          .trim()
+    const rawSearchQuery = query.q?.trim() || '';
+    const normSearchTokens = rawSearchQuery
+      ? rawSearchQuery
           .split(/\s+/)
           .filter(Boolean)
           .map((t) => this.unaccent(t))
       : [];
+
+    const relevanceMap = new Map<string, number>();
 
     let candidates = allActiveModels.filter((m) => {
       if (query.kind && m.kind !== query.kind) return false;
@@ -380,16 +423,28 @@ export class ModelService {
       if (query.mount && m.mount !== query.mount) return false;
       if (query.featured === 'true' && !m.isFeatured) return false;
       if (query.excludeId && m.id === query.excludeId) return false;
-      if (
-        normSearchTokens.length > 0 &&
-        !this.matchesSearchTokens(m, normSearchTokens)
-      ) {
-        return false;
+      if (normSearchTokens.length > 0) {
+        const score = this.computeSearchRelevance(
+          m,
+          rawSearchQuery,
+          normSearchTokens,
+        );
+        if (score <= 0) {
+          return false;
+        }
+        relevanceMap.set(m.id, score);
       }
       return true;
     });
 
-    if (query.sort === 'price_asc') {
+    if (normSearchTokens.length > 0 && (!query.sort || query.sort === 'default')) {
+      // Ưu tiên xếp hạng theo điểm liên quan (Relevance Ranking)
+      candidates = [...candidates].sort(
+        (a, b) =>
+          (relevanceMap.get(b.id) ?? 0) - (relevanceMap.get(a.id) ?? 0) ||
+          a.name.localeCompare(b.name),
+      );
+    } else if (query.sort === 'price_asc') {
       candidates = [...candidates].sort(
         (a, b) => a.pricePerDay - b.pricePerDay || a.id.localeCompare(b.id),
       );

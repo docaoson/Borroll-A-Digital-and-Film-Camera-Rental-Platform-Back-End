@@ -106,29 +106,36 @@ describe('ModelService camera classification filters', () => {
     expect(result).toBeDefined();
   });
 
-  it('matches search query only against model name words and ignores brand name', async () => {
-    const matchesSearch = (service as any).matchesSearchTokens.bind(service);
+  it('matches search query only against model name words and ranks by relevance', async () => {
+    const computeRelevance = (service as any).computeSearchRelevance.bind(service);
 
-    const modelWithDifferentBrand = {
+    const sonyCyberShot = {
       normName: 'sony cyber-shot dsc-w50',
       normBrandName: 'canon',
     } as any;
 
-    // 'b' should not match inside 'cyber'
-    expect(matchesSearch(modelWithDifferentBrand, ['b'])).toBe(false);
+    const canonAE1 = {
+      normName: 'canon ae-1',
+      normBrandName: 'canon',
+    } as any;
 
-    // Brand is 'canon', but searching 'canon' or 'c' should NOT match brand; it should only match if 'c' starts a word in model name ('cyber')
-    // Model '4' with brand 'canon' should NOT match 'c'
     const modelNumberFour = {
       normName: '4',
       normBrandName: 'canon',
     } as any;
-    expect(matchesSearch(modelNumberFour, ['c'])).toBe(false);
-    expect(matchesSearch(modelNumberFour, ['canon'])).toBe(false);
 
-    // 's' matches 'sony', 'd' matches 'dsc', 'w' matches 'w50' in model name
-    expect(matchesSearch(modelWithDifferentBrand, ['s'])).toBe(true);
-    expect(matchesSearch(modelWithDifferentBrand, ['dsc'])).toBe(true);
-    expect(matchesSearch(modelWithDifferentBrand, ['w50'])).toBe(true);
+    // Searching 'b' should NOT match sonyCyberShot
+    expect(computeRelevance(sonyCyberShot, 'b', ['b'])).toBe(0);
+
+    // Searching 'c' (single character): only models starting with 'c' should match
+    expect(computeRelevance(canonAE1, 'c', ['c'])).toBeGreaterThan(0);
+    expect(computeRelevance(sonyCyberShot, 'c', ['c'])).toBe(0);
+    expect(computeRelevance(modelNumberFour, 'c', ['c'])).toBe(0);
+
+    // Searching 'sony' matches sonyCyberShot
+    expect(computeRelevance(sonyCyberShot, 'sony', ['sony'])).toBeGreaterThan(0);
+
+    // Searching 'cyber' matches sonyCyberShot
+    expect(computeRelevance(sonyCyberShot, 'cyber', ['cyber'])).toBeGreaterThan(0);
   });
 });
