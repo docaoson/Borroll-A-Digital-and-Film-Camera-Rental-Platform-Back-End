@@ -107,32 +107,42 @@ export class ModelService {
     private readonly storageService: StorageService,
   ) {}
 
-  private async assertCameraCategoryMatchesType(
+  private async resolveCameraCategory(
     kind: string,
     cameraType: CameraType | null | undefined,
-    categoryId: string,
-  ): Promise<void> {
-    if (kind !== 'CAMERA') return;
+    categoryId?: string | null,
+  ): Promise<string | undefined> {
+    if (kind !== 'CAMERA' || !categoryId) return categoryId ?? undefined;
+    if (!cameraType) return categoryId;
+
     const expectedParentSlug: Record<CameraType, string> = {
       FILM: 'may-film',
       DIGITAL: 'may-digital',
       INSTANT: 'may-instant',
     };
-    if (!cameraType) {
-      throw new BadRequestException('Vui lòng chọn nhóm máy ảnh.');
-    }
+
     const category = await this.prisma.category.findUnique({
       where: { id: categoryId },
-      select: { slug: true, parent: { select: { slug: true } } },
+      select: { id: true, slug: true, parent: { select: { slug: true } } },
     });
+
+    const targetSlug = expectedParentSlug[cameraType];
     const matches =
-      category?.slug === expectedParentSlug[cameraType] ||
-      category?.parent?.slug === expectedParentSlug[cameraType];
-    if (!matches) {
-      throw new BadRequestException(
-        'Loại thiết bị phải thuộc đúng nhóm Film, Digital hoặc Instant đã chọn.',
-      );
+      category?.slug === targetSlug || category?.parent?.slug === targetSlug;
+
+    if (matches) {
+      return categoryId;
     }
+
+    // Auto-resolve to category under appropriate group or parent root instead of throwing an error
+    const fallback = await this.prisma.category.findFirst({
+      where: {
+        OR: [{ parent: { slug: targetSlug } }, { slug: targetSlug }],
+      },
+      select: { id: true },
+    });
+
+    return fallback ? fallback.id : categoryId;
   }
 
   public invalidateCategoriesCache(): void {
@@ -902,16 +912,16 @@ export class ModelService {
 
   async createAdminModel(dto: CreateModelDto, actorId: string) {
     try {
-      await this.assertCameraCategoryMatchesType(
+      const resolvedCategoryId = (await this.resolveCameraCategory(
         dto.kind,
         dto.cameraType,
         dto.categoryId,
-      );
+      )) || dto.categoryId;
       const created = await this.prisma.$transaction(async (tx) => {
         const model = await tx.rentalModel.create({
           data: {
             kind: dto.kind,
-            categoryId: dto.categoryId,
+            categoryId: resolvedCategoryId,
             brandId: dto.brandId,
             name: dto.name.trim(),
             slug: dto.slug.trim().toLowerCase(),
@@ -995,10 +1005,15 @@ export class ModelService {
       });
     }
 
-    await this.assertCameraCategoryMatchesType(
-      dto.kind ?? existing.kind,
-      dto.cameraType ?? existing.cameraType,
-      dto.categoryId ?? existing.categoryId,
+    const targetKind = dto.kind ?? existing.kind;
+    const targetCameraType =
+      dto.cameraType !== undefined ? dto.cameraType : existing.cameraType;
+    const targetCategoryId = dto.categoryId ?? existing.categoryId;
+
+    const resolvedCategoryId = await this.resolveCameraCategory(
+      targetKind,
+      targetCameraType,
+      targetCategoryId,
     );
 
     try {
@@ -1007,7 +1022,7 @@ export class ModelService {
           where: { id },
           data: {
             kind: dto.kind,
-            categoryId: dto.categoryId,
+            categoryId: resolvedCategoryId ?? dto.categoryId,
             brandId: dto.brandId,
             name: dto.name?.trim(),
             slug: dto.slug?.trim().toLowerCase(),

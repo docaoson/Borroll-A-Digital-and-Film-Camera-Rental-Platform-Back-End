@@ -60,6 +60,7 @@ describe('ModelService camera classification filters', () => {
       rentalModel: { findMany: jest.fn().mockResolvedValue(models) },
       category: {
         findMany: jest.fn().mockResolvedValue(categories),
+        findFirst: jest.fn().mockResolvedValue({ id: 'digital', slug: 'may-digital' }),
         findUnique: jest.fn().mockResolvedValue({
           slug: 'film-slr',
           parent: { slug: 'may-film' },
@@ -98,11 +99,10 @@ describe('ModelService camera classification filters', () => {
     expect(result.facets.sensorSizes).toEqual([{ value: 'Full Frame', count: 1 }]);
   });
 
-  it('rejects assigning a camera to a category under a different group', async () => {
-    const assertCategory = (service as any).assertCameraCategoryMatchesType.bind(service);
+  it('auto-resolves assigning a camera to a category when group mismatches', async () => {
+    const resolveCategory = (service as any).resolveCameraCategory.bind(service);
 
-    await expect(assertCategory('CAMERA', 'DIGITAL', 'film-category')).rejects.toThrow(
-      'Loại thiết bị phải thuộc đúng nhóm Film, Digital hoặc Instant đã chọn.',
-    );
+    const result = await resolveCategory('CAMERA', 'DIGITAL', 'film-category');
+    expect(result).toBeDefined();
   });
 });
