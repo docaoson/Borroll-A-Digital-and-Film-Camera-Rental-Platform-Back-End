@@ -106,21 +106,29 @@ describe('ModelService camera classification filters', () => {
     expect(result).toBeDefined();
   });
 
-  it('matches search query by word prefix instead of arbitrary substring', async () => {
+  it('matches search query only against model name words and ignores brand name', async () => {
     const matchesSearch = (service as any).matchesSearchTokens.bind(service);
 
-    const sonyCyberShot = {
+    const modelWithDifferentBrand = {
       normName: 'sony cyber-shot dsc-w50',
-      normBrandName: 'sony',
+      normBrandName: 'canon',
     } as any;
 
     // 'b' should not match inside 'cyber'
-    expect(matchesSearch(sonyCyberShot, ['b'])).toBe(false);
+    expect(matchesSearch(modelWithDifferentBrand, ['b'])).toBe(false);
 
-    // 's' matches 'sony', 'c' matches 'cyber', 'd' matches 'dsc', 'w' matches 'w50'
-    expect(matchesSearch(sonyCyberShot, ['s'])).toBe(true);
-    expect(matchesSearch(sonyCyberShot, ['cyb'])).toBe(true);
-    expect(matchesSearch(sonyCyberShot, ['dsc'])).toBe(true);
-    expect(matchesSearch(sonyCyberShot, ['w50'])).toBe(true);
+    // Brand is 'canon', but searching 'canon' or 'c' should NOT match brand; it should only match if 'c' starts a word in model name ('cyber')
+    // Model '4' with brand 'canon' should NOT match 'c'
+    const modelNumberFour = {
+      normName: '4',
+      normBrandName: 'canon',
+    } as any;
+    expect(matchesSearch(modelNumberFour, ['c'])).toBe(false);
+    expect(matchesSearch(modelNumberFour, ['canon'])).toBe(false);
+
+    // 's' matches 'sony', 'd' matches 'dsc', 'w' matches 'w50' in model name
+    expect(matchesSearch(modelWithDifferentBrand, ['s'])).toBe(true);
+    expect(matchesSearch(modelWithDifferentBrand, ['dsc'])).toBe(true);
+    expect(matchesSearch(modelWithDifferentBrand, ['w50'])).toBe(true);
   });
 });

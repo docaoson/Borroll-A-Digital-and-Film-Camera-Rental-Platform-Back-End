@@ -175,16 +175,15 @@ export class ModelService {
     model: CachedActiveModel,
     normTokens: string[],
   ): boolean {
-    // Tách các từ trong tên máy và tên thương hiệu thành danh sách các từ riêng biệt (word tokens)
-    // Hỗ trợ dấu gạch ngang, gạch dưới, khoảng trắng và các ký tự phân cách thông dụng
+    // Chỉ tìm kiếm theo Tên sản phẩm (Model Name), không tìm theo Thương hiệu
+    // (Thương hiệu đã có bộ lọc riêng biệt ở thanh bên - Sidebar Brand Filters)
+    // Tách các từ trong tên máy thành danh sách các từ riêng biệt (word tokens)
     const nameWords = model.normName.split(/[\s\-_/.,+()]+/).filter(Boolean);
-    const brandWords = model.normBrandName.split(/[\s\-_/.,+()]+/).filter(Boolean);
-    const allWords = [...brandWords, ...nameWords];
 
     for (const token of normTokens) {
-      // Mỗi token tìm kiếm phải là tiền tố (prefix) của ít nhất một từ trong tên hoặc thương hiệu
-      // Ví dụ: token 'b' chỉ khớp với 'Black', 'Body', 'Canon' (không khớp với 'Cyber' chứa 'b' ở giữa)
-      const matchesWordPrefix = allWords.some((word) => word.startsWith(token));
+      // Mỗi token tìm kiếm phải là tiền tố (prefix) của ít nhất một từ trong tên máy
+      // Ví dụ: token 'c' chỉ khớp với 'Canon', không khớp với các máy có tên khác
+      const matchesWordPrefix = nameWords.some((word) => word.startsWith(token));
       if (!matchesWordPrefix) {
         return false;
       }
