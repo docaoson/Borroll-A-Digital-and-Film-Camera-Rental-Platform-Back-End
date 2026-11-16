@@ -105,4 +105,22 @@ describe('ModelService camera classification filters', () => {
     const result = await resolveCategory('CAMERA', 'DIGITAL', 'film-category');
     expect(result).toBeDefined();
   });
+
+  it('matches search query by word prefix instead of arbitrary substring', async () => {
+    const matchesSearch = (service as any).matchesSearchTokens.bind(service);
+
+    const sonyCyberShot = {
+      normName: 'sony cyber-shot dsc-w50',
+      normBrandName: 'sony',
+    } as any;
+
+    // 'b' should not match inside 'cyber'
+    expect(matchesSearch(sonyCyberShot, ['b'])).toBe(false);
+
+    // 's' matches 'sony', 'c' matches 'cyber', 'd' matches 'dsc', 'w' matches 'w50'
+    expect(matchesSearch(sonyCyberShot, ['s'])).toBe(true);
+    expect(matchesSearch(sonyCyberShot, ['cyb'])).toBe(true);
+    expect(matchesSearch(sonyCyberShot, ['dsc'])).toBe(true);
+    expect(matchesSearch(sonyCyberShot, ['w50'])).toBe(true);
+  });
 });
