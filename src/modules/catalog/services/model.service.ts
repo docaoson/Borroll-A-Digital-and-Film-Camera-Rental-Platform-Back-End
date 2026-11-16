@@ -125,9 +125,9 @@ export class ModelService {
       where: { id: categoryId },
       select: { slug: true, parent: { select: { slug: true } } },
     });
-    const matches = cameraType === CameraType.INSTANT
-      ? category?.slug === expectedParentSlug[cameraType] || category?.parent?.slug === expectedParentSlug[cameraType]
-      : category?.parent?.slug === expectedParentSlug[cameraType];
+    const matches =
+      category?.slug === expectedParentSlug[cameraType] ||
+      category?.parent?.slug === expectedParentSlug[cameraType];
     if (!matches) {
       throw new BadRequestException(
         'Loại thiết bị phải thuộc đúng nhóm Film, Digital hoặc Instant đã chọn.',
